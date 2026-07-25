@@ -13,13 +13,13 @@
     --brown-dark:#5C3A21; --brown-mid:#7A6248; --brown-light:#9C8163; --text:#4A3A26;
     --accent:#C87F3D; --accent-dark:#8A5A1E;
     --pending-bg:#FBEBD3; --pending-fg:#8A5A1E;
-    --fulfilled-bg:#DCEBD8; --fulfilled-fg:#2F6B3A;
-    --red:#B5654A;
+    --delivered-bg:#DCEBD8; --delivered-fg:#2F6B3A;
+    --red:#B5654A; --blue:#3E6B94; --blue-bg:#E3ECF3;
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--cream);font-family:'Poppins',ui-sans-serif,system-ui,sans-serif;color:var(--text);}
   .display{font-family:'Fraunces',serif;}
-  .wrap{max-width:960px;margin:0 auto;padding:32px 20px 60px;}
+  .wrap{max-width:1020px;margin:0 auto;padding:32px 20px 60px;}
   .header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:24px;}
   .header h1{font-size:1.9rem;color:var(--brown-dark);margin:0;}
   .header p{font-size:.85rem;color:var(--brown-light);margin:2px 0 0;}
@@ -28,6 +28,7 @@
   .btn:hover{filter:brightness(1.06);}
   .btn-dark{background:var(--accent-dark);}
   .btn-ghost{background:transparent;color:var(--brown-mid);border:1px solid var(--border2);}
+  .btn.small{padding:6px 10px;font-size:.75rem;}
   .paste-box{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:24px;}
   .paste-box p{font-size:.85rem;color:var(--brown-mid);margin:0 0 8px;}
   textarea{width:100%;height:160px;border-radius:10px;padding:12px;font-size:.85rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#FBF6EC;border:1px solid var(--border2);color:var(--text);resize:vertical;}
@@ -38,12 +39,12 @@
   .stat .label{font-size:.72rem;color:var(--brown-light);}
   .stat .value{font-size:1.35rem;font-weight:700;color:var(--brown-dark);}
   .stat.pending .value{color:var(--accent-dark);}
-  .stat.fulfilled .value{color:var(--fulfilled-fg);}
+  .stat.delivered .value{color:var(--delivered-fg);}
   .toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;}
   .tabs{display:flex;gap:4px;background:#F1E6D2;border-radius:10px;padding:4px;}
   .tabs button{border:none;background:transparent;padding:7px 14px;border-radius:8px;font-size:.78rem;font-weight:600;color:var(--brown-light);cursor:pointer;text-transform:capitalize;}
   .tabs button.active{background:var(--card);color:var(--brown-dark);}
-  input[type="text"], input[type="email"], input[type="password"]{padding:8px 12px;border-radius:10px;font-size:.85rem;border:1px solid var(--border);background:var(--card);color:var(--text);outline:none;}
+  input[type="text"], input[type="email"], input[type="password"], input[type="number"], select{padding:8px 12px;border-radius:10px;font-size:.85rem;border:1px solid var(--border);background:var(--card);color:var(--text);outline:none;font-family:inherit;}
   table{width:100%;border-collapse:collapse;font-size:.87rem;background:var(--card);}
   .table-wrap{border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.04);}
   thead tr{background:#F1E6D2;color:var(--brown-mid);}
@@ -58,9 +59,16 @@
   .total-cell{font-weight:600;color:var(--brown-dark);}
   .pill{border:none;border-radius:999px;padding:6px 12px;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap;letter-spacing:.02em;}
   .pill.pending{background:var(--pending-bg);color:var(--pending-fg);}
-  .pill.fulfilled{background:var(--fulfilled-bg);color:var(--fulfilled-fg);}
-  .remove-btn{background:none;border:none;color:var(--red);font-size:.75rem;cursor:pointer;padding:4px 8px;border-radius:6px;}
+  .pill.delivered{background:var(--delivered-bg);color:var(--delivered-fg);}
+  .leadtime{font-size:.75rem;white-space:nowrap;padding:4px 8px;border-radius:8px;}
+  .leadtime.delivered{background:var(--blue-bg);color:var(--blue);}
+  .leadtime.pending{color:var(--brown-light);}
+  .row-actions{display:flex;gap:4px;justify-content:flex-end;}
+  .remove-btn, .edit-btn{background:none;border:none;font-size:.75rem;cursor:pointer;padding:4px 8px;border-radius:6px;}
+  .remove-btn{color:var(--red);}
   .remove-btn:hover{background:#FBEAE4;}
+  .edit-btn{color:var(--blue);}
+  .edit-btn:hover{background:var(--blue-bg);}
   .detail-row td{background:#FBF6EC;font-size:.85rem;}
   .detail-grid{display:grid;grid-template-columns:1fr;gap:12px;}
   @media(min-width:640px){.detail-grid{grid-template-columns:1fr 1fr;}}
@@ -75,6 +83,19 @@
   .sync-dot{width:8px;height:8px;border-radius:50%;background:#2F6B3A;display:inline-block;margin-right:6px;}
   .sync-dot.off{background:#B5654A;}
   .sync-label{font-size:.72rem;color:var(--brown-light);display:flex;align-items:center;}
+
+  /* Edit form */
+  .edit-form{padding:6px 0;}
+  .edit-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:14px;}
+  @media(min-width:640px){.edit-grid{grid-template-columns:1fr 1fr;}}
+  .edit-grid .full{grid-column:1/-1;}
+  .edit-grid label{display:block;font-size:.72rem;font-weight:600;color:var(--brown-mid);margin-bottom:3px;}
+  .edit-grid input, .edit-grid select{width:100%;}
+  .edit-items label{display:block;font-size:.72rem;font-weight:600;color:var(--brown-mid);margin-bottom:6px;}
+  .ef-item-row{display:grid;grid-template-columns:2fr 70px 90px 2fr 32px;gap:6px;margin-bottom:6px;align-items:center;}
+  .ef-item-row input{width:100%;}
+  .ef-remove-item{background:none;border:none;color:var(--red);cursor:pointer;font-size:.9rem;padding:4px;}
+  .edit-actions{display:flex;gap:8px;margin-top:14px;}
 
   /* Login screen */
   #loginScreen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
@@ -94,7 +115,7 @@
 <div id="configWarning" class="hidden">
   <div class="config-warning">
     <b>Backend not connected yet.</b><br><br>
-    Open this file and fill in <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> near the top of the <code>&lt;script&gt;</code> section with the values from your Supabase project (Project Settings → API). See the setup guide for the full walkthrough.
+    Open this file and fill in <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> near the top of the <code>&lt;script&gt;</code> section with the values from your Supabase project (Project → Connect, or Settings → API Keys). See the setup guide for the full walkthrough.
   </div>
 </div>
 
@@ -139,7 +160,7 @@
     <div class="stats">
       <div class="stat"><div class="label">Total orders</div><div class="value" id="statTotal">0</div></div>
       <div class="stat pending"><div class="label">Pending</div><div class="value" id="statPending">0</div></div>
-      <div class="stat fulfilled"><div class="label">Fulfilled</div><div class="value" id="statFulfilled">0</div></div>
+      <div class="stat delivered"><div class="label">Delivered</div><div class="value" id="statDelivered">0</div></div>
       <div class="stat"><div class="label">Total revenue</div><div class="value" id="statRevenue">AED 0</div></div>
     </div>
 
@@ -147,7 +168,7 @@
       <div class="tabs" id="tabs">
         <button data-filter="all" class="active">All</button>
         <button data-filter="pending">Pending</button>
-        <button data-filter="fulfilled">Fulfilled</button>
+        <button data-filter="delivered">Delivered</button>
       </div>
       <input type="text" id="searchInput" placeholder="Search name, phone, order #">
     </div>
@@ -160,7 +181,7 @@
 
 <script>
 /* =====================================================================
-   1) FILL THESE IN — from your Supabase project → Settings → API
+   1) FILL THESE IN — from your Supabase project → Connect (or Settings → API Keys)
    ===================================================================== */
 const SUPABASE_URL = "https://icnknaidayqluqbwgdrk.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_5_MxTp-_IGIp_lGKOsAQMQ_Vj9xwZvB";
@@ -177,7 +198,9 @@ let orders = [];
 let filter = 'all';
 let query = '';
 let expandedId = null;
+let editingId = null;
 let channel = null;
+let tickTimer = null;
 
 // ---------- Row <-> App object mapping ----------
 function toRow(o){
@@ -185,7 +208,8 @@ function toRow(o){
     id: o.id, name: o.name, phone: o.phone, fulfilment: o.fulfilment,
     area: o.area, address: o.address, total: o.total,
     pref_date: o.prefDate, pref_time: o.prefTime, notes: o.notes,
-    items: o.items, status: o.status, received_at: o.receivedAt
+    items: o.items, status: o.status, received_at: o.receivedAt,
+    delivered_at: o.deliveredAt || null
   };
 }
 function fromRow(r){
@@ -193,7 +217,8 @@ function fromRow(r){
     id: r.id, name: r.name || '', phone: r.phone || '', fulfilment: r.fulfilment || '',
     area: r.area || '', address: r.address || '', total: r.total || 0,
     prefDate: r.pref_date || '', prefTime: r.pref_time || '', notes: r.notes || '',
-    items: r.items || [], status: r.status || 'pending', receivedAt: r.received_at
+    items: r.items || [], status: r.status || 'pending', receivedAt: r.received_at,
+    deliveredAt: r.delivered_at || null
   };
 }
 
@@ -228,11 +253,23 @@ function parseOne(msg){
     name: field(msg,'Name'), phone: field(msg,'Phone'), fulfilment: field(msg,'Fulfilment'),
     area: field(msg,'Area'), address: field(msg,'Address'),
     prefDate: field(msg,'Preferred date'), prefTime: field(msg,'Preferred time'), notes: field(msg,'Notes'),
-    items, status: 'pending', receivedAt: new Date().toISOString()
+    items, status: 'pending', receivedAt: new Date().toISOString(), deliveredAt: null
   };
 }
 function parseAll(raw){
   return splitMessages(raw).map(parseOne).filter(o => o.name || o.total);
+}
+
+// ---------- Duration formatting ----------
+function formatDuration(ms){
+  if(ms < 0) ms = 0;
+  const mins = Math.floor(ms/60000);
+  const days = Math.floor(mins/1440);
+  const hrs = Math.floor((mins%1440)/60);
+  const remMins = mins % 60;
+  if(days > 0) return `${days}d ${hrs}h`;
+  if(hrs > 0) return `${hrs}h ${remMins}m`;
+  return `${remMins}m`;
 }
 
 // ---------- Toast ----------
@@ -263,7 +300,7 @@ async function handleParse(){
   const existingMap = new Map(orders.map(o => [o.id, o]));
   const merged = parsed.map(p => {
     const existing = existingMap.get(p.id);
-    return existing ? {...p, status: existing.status, receivedAt: existing.receivedAt} : p;
+    return existing ? {...p, status: existing.status, receivedAt: existing.receivedAt, deliveredAt: existing.deliveredAt} : p;
   });
   const added = merged.filter(p => !existingMap.has(p.id)).length;
   const updated = merged.length - added;
@@ -280,10 +317,13 @@ async function handleParse(){
 async function toggleStatus(id){
   const o = orders.find(o=>o.id===id);
   if(!o) return;
-  const newStatus = o.status === 'pending' ? 'fulfilled' : 'pending';
-  const { error } = await sb.from('orders').update({ status: newStatus }).eq('id', id);
+  const goingDelivered = o.status === 'pending';
+  const newStatus = goingDelivered ? 'delivered' : 'pending';
+  const deliveredAt = goingDelivered ? new Date().toISOString() : null;
+  const { error } = await sb.from('orders').update({ status: newStatus, delivered_at: deliveredAt }).eq('id', id);
   if(error){ showToast('Update failed: ' + error.message); return; }
   o.status = newStatus;
+  o.deliveredAt = deliveredAt;
   render();
 }
 
@@ -295,7 +335,17 @@ async function deleteOrder(id){
   render();
 }
 
+async function saveEdit(id, patch){
+  const { error } = await sb.from('orders').update(patch).eq('id', id);
+  if(error){ showToast('Save failed: ' + error.message); return false; }
+  const o = orders.find(o=>o.id===id);
+  if(o) Object.assign(o, fromRow({...toRow(o), ...patch}));
+  showToast('Order updated.');
+  return true;
+}
+
 function toggleExpand(id){
+  if(editingId === id) return; // don't collapse while editing
   expandedId = expandedId === id ? null : id;
   render();
 }
@@ -305,14 +355,60 @@ function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+function itemRowHtml(it, i){
+  it = it || {name:'', qty:1, price:0, flavors:[]};
+  return `
+    <div class="ef-item-row" data-idx="${i}">
+      <input class="ef-item-name" value="${escapeHtml(it.name)}" placeholder="Item name">
+      <input class="ef-item-qty" type="number" min="1" value="${it.qty}" placeholder="Qty">
+      <input class="ef-item-price" type="number" min="0" value="${it.price}" placeholder="Price">
+      <input class="ef-item-flavors" value="${escapeHtml((it.flavors||[]).join(', '))}" placeholder="Flavors, comma separated">
+      <button type="button" class="ef-remove-item" title="Remove item">✕</button>
+    </div>`;
+}
+
+function renderEditForm(o){
+  return `
+    <div class="edit-form" data-edit-id="${escapeHtml(o.id)}">
+      <div class="edit-grid">
+        <div><label>Name</label><input class="ef-name" value="${escapeHtml(o.name)}"></div>
+        <div><label>Phone</label><input class="ef-phone" value="${escapeHtml(o.phone)}"></div>
+        <div>
+          <label>Fulfilment</label>
+          <select class="ef-fulfilment">
+            <option value="pickup" ${o.fulfilment==='pickup'?'selected':''}>Pickup</option>
+            <option value="delivery" ${o.fulfilment==='delivery'?'selected':''}>Delivery</option>
+          </select>
+        </div>
+        <div><label>Area</label><input class="ef-area" value="${escapeHtml(o.area)}"></div>
+        <div class="full"><label>Address</label><input class="ef-address" value="${escapeHtml(o.address)}"></div>
+        <div><label>Preferred date</label><input class="ef-prefdate" value="${escapeHtml(o.prefDate)}"></div>
+        <div><label>Preferred time</label><input class="ef-preftime" value="${escapeHtml(o.prefTime)}"></div>
+        <div><label>Total (AED)</label><input class="ef-total" type="number" min="0" value="${o.total}"></div>
+        <div class="full"><label>Notes</label><input class="ef-notes" value="${escapeHtml(o.notes)}"></div>
+      </div>
+      <div class="edit-items">
+        <label>Items</label>
+        <div class="ef-items-list">
+          ${o.items.map((it,i)=>itemRowHtml(it,i)).join('')}
+        </div>
+        <button type="button" class="btn btn-ghost small ef-add-item">+ Add item</button>
+      </div>
+      <div class="edit-actions">
+        <button class="btn btn-dark ef-save">Save changes</button>
+        <button class="btn btn-ghost ef-cancel">Cancel</button>
+      </div>
+    </div>`;
+}
+
 function render(){
   const total = orders.length;
   const pending = orders.filter(o=>o.status==='pending').length;
-  const fulfilled = orders.filter(o=>o.status==='fulfilled').length;
+  const delivered = orders.filter(o=>o.status==='delivered').length;
   const revenue = orders.reduce((s,o)=>s+o.total,0);
   document.getElementById('statTotal').textContent = total;
   document.getElementById('statPending').textContent = pending;
-  document.getElementById('statFulfilled').textContent = fulfilled;
+  document.getElementById('statDelivered').textContent = delivered;
   document.getElementById('statRevenue').textContent = 'AED ' + revenue.toFixed(0);
 
   let list = orders;
@@ -332,42 +428,64 @@ function render(){
 
   let rows = '';
   list.forEach(o=>{
+    let leadTimeHtml;
+    if(o.status === 'delivered' && o.deliveredAt){
+      const ms = new Date(o.deliveredAt) - new Date(o.receivedAt);
+      leadTimeHtml = `<span class="leadtime delivered">${formatDuration(ms)}</span>`;
+    } else {
+      const ms = Date.now() - new Date(o.receivedAt);
+      leadTimeHtml = `<span class="leadtime pending">waiting ${formatDuration(ms)}</span>`;
+    }
+
     rows += `
       <tr class="order-row" data-id="${escapeHtml(o.id)}">
         <td class="order-id">${escapeHtml(o.id)}</td>
         <td><div class="cust-name">${escapeHtml(o.name || '—')}</div><div class="cust-phone">${escapeHtml(o.phone)}</div></td>
         <td class="mode-cell">${escapeHtml(o.fulfilment || '—')}</td>
         <td class="right total-cell">AED ${o.total.toFixed(0)}</td>
-        <td><button class="pill ${o.status}" data-toggle="${escapeHtml(o.id)}">${o.status === 'pending' ? 'Pending' : 'Fulfilled'}</button></td>
-        <td class="right"><button class="remove-btn" data-remove="${escapeHtml(o.id)}">Remove</button></td>
+        <td>${leadTimeHtml}</td>
+        <td><button class="pill ${o.status}" data-toggle="${escapeHtml(o.id)}">${o.status === 'pending' ? 'Pending' : 'Delivered'}</button></td>
+        <td class="right">
+          <div class="row-actions">
+            <button class="edit-btn" data-edit="${escapeHtml(o.id)}">Edit</button>
+            <button class="remove-btn" data-remove="${escapeHtml(o.id)}">Remove</button>
+          </div>
+        </td>
       </tr>`;
+
     if(expandedId === o.id){
-      const itemsHtml = o.items.map(it => `
-        <li>${escapeHtml(it.name)} x${it.qty} — AED ${it.price}
-          ${it.flavors && it.flavors.length ? `<ul class="flavors">${it.flavors.map(f=>`<li>• ${escapeHtml(f)}</li>`).join('')}</ul>` : ''}
-        </li>`).join('');
-      rows += `
-        <tr class="detail-row">
-          <td colspan="6">
-            <div class="detail-grid">
-              <div><div class="field"><b>Items</b></div><ul class="items-list">${itemsHtml}</ul></div>
-              <div>
-                ${o.area ? `<div class="field"><b>Area:</b> ${escapeHtml(o.area)}</div>` : ''}
-                ${o.address ? `<div class="field"><b>Address:</b> ${escapeHtml(o.address)}</div>` : ''}
-                ${o.prefDate ? `<div class="field"><b>Preferred date:</b> ${escapeHtml(o.prefDate)}</div>` : ''}
-                ${o.prefTime ? `<div class="field"><b>Preferred time:</b> ${escapeHtml(o.prefTime)}</div>` : ''}
-                ${o.notes ? `<div class="field"><b>Notes:</b> ${escapeHtml(o.notes)}</div>` : ''}
+      if(editingId === o.id){
+        rows += `<tr class="detail-row"><td colspan="7">${renderEditForm(o)}</td></tr>`;
+      } else {
+        const itemsHtml = o.items.map(it => `
+          <li>${escapeHtml(it.name)} x${it.qty} — AED ${it.price}
+            ${it.flavors && it.flavors.length ? `<ul class="flavors">${it.flavors.map(f=>`<li>• ${escapeHtml(f)}</li>`).join('')}</ul>` : ''}
+          </li>`).join('');
+        rows += `
+          <tr class="detail-row">
+            <td colspan="7">
+              <div class="detail-grid">
+                <div><div class="field"><b>Items</b></div><ul class="items-list">${itemsHtml}</ul></div>
+                <div>
+                  ${o.area ? `<div class="field"><b>Area:</b> ${escapeHtml(o.area)}</div>` : ''}
+                  ${o.address ? `<div class="field"><b>Address:</b> ${escapeHtml(o.address)}</div>` : ''}
+                  ${o.prefDate ? `<div class="field"><b>Preferred date:</b> ${escapeHtml(o.prefDate)}</div>` : ''}
+                  ${o.prefTime ? `<div class="field"><b>Preferred time:</b> ${escapeHtml(o.prefTime)}</div>` : ''}
+                  ${o.notes ? `<div class="field"><b>Notes:</b> ${escapeHtml(o.notes)}</div>` : ''}
+                  <div class="field"><b>Received:</b> ${new Date(o.receivedAt).toLocaleString()}</div>
+                  ${o.deliveredAt ? `<div class="field"><b>Delivered:</b> ${new Date(o.deliveredAt).toLocaleString()}</div>` : ''}
+                </div>
               </div>
-            </div>
-          </td>
-        </tr>`;
+            </td>
+          </tr>`;
+      }
     }
   });
 
   area.innerHTML = `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Order #</th><th>Customer</th><th>Mode</th><th class="right">Total</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Order #</th><th>Customer</th><th>Mode</th><th class="right">Total</th><th>Lead time</th><th>Status</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
@@ -381,6 +499,59 @@ function render(){
   area.querySelectorAll('[data-remove]').forEach(btn=>{
     btn.addEventListener('click', (e)=>{ e.stopPropagation(); deleteOrder(btn.dataset.remove); });
   });
+  area.querySelectorAll('[data-edit]').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      editingId = btn.dataset.edit;
+      expandedId = btn.dataset.edit;
+      render();
+    });
+  });
+
+  // Edit form wiring
+  const editForm = area.querySelector('.edit-form');
+  if(editForm){
+    const id = editForm.dataset.editId;
+    editForm.querySelector('.ef-add-item').addEventListener('click', ()=>{
+      const list = editForm.querySelector('.ef-items-list');
+      const idx = list.children.length;
+      list.insertAdjacentHTML('beforeend', itemRowHtml(null, idx));
+      wireItemRemove(list.lastElementChild);
+    });
+    editForm.querySelectorAll('.ef-item-row').forEach(wireItemRemove);
+    editForm.querySelector('.ef-cancel').addEventListener('click', ()=>{
+      editingId = null;
+      render();
+    });
+    editForm.querySelector('.ef-save').addEventListener('click', async ()=>{
+      const items = Array.from(editForm.querySelectorAll('.ef-item-row')).map(row=>{
+        const name = row.querySelector('.ef-item-name').value.trim();
+        const qty = parseFloat(row.querySelector('.ef-item-qty').value) || 0;
+        const price = parseFloat(row.querySelector('.ef-item-price').value) || 0;
+        const flavors = row.querySelector('.ef-item-flavors').value.split(',').map(f=>f.trim()).filter(Boolean);
+        return { name, qty, price, flavors };
+      }).filter(it => it.name);
+
+      const patch = {
+        name: editForm.querySelector('.ef-name').value.trim(),
+        phone: editForm.querySelector('.ef-phone').value.trim(),
+        fulfilment: editForm.querySelector('.ef-fulfilment').value,
+        area: editForm.querySelector('.ef-area').value.trim(),
+        address: editForm.querySelector('.ef-address').value.trim(),
+        pref_date: editForm.querySelector('.ef-prefdate').value.trim(),
+        pref_time: editForm.querySelector('.ef-preftime').value.trim(),
+        notes: editForm.querySelector('.ef-notes').value.trim(),
+        total: parseFloat(editForm.querySelector('.ef-total').value) || 0,
+        items
+      };
+      const ok = await saveEdit(id, patch);
+      if(ok){ editingId = null; await fetchOrders(); }
+    });
+  }
+}
+function wireItemRemove(row){
+  const btn = row.querySelector('.ef-remove-item');
+  btn.addEventListener('click', ()=>{ row.remove(); });
 }
 
 // ---------- Realtime sync ----------
@@ -388,7 +559,7 @@ function subscribeRealtime(){
   if(channel) sb.removeChannel(channel);
   channel = sb.channel('orders-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-      fetchOrders();
+      if(!editingId) fetchOrders();
     })
     .subscribe((status) => {
       const dot = document.getElementById('syncDot');
@@ -404,10 +575,13 @@ async function showApp(){
   document.getElementById('app').classList.remove('hidden');
   await fetchOrders();
   subscribeRealtime();
+  if(tickTimer) clearInterval(tickTimer);
+  tickTimer = setInterval(()=>{ if(!editingId) render(); }, 60000); // refresh "waiting Xh" clocks
 }
 function showLogin(){
   document.getElementById('app').classList.add('hidden');
   document.getElementById('loginScreen').classList.remove('hidden');
+  if(tickTimer) clearInterval(tickTimer);
 }
 
 async function init(){

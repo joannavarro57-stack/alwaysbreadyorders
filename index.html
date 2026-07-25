@@ -63,12 +63,17 @@
   .leadtime{font-size:.75rem;white-space:nowrap;padding:4px 8px;border-radius:8px;}
   .leadtime.delivered{background:var(--blue-bg);color:var(--blue);}
   .leadtime.pending{color:var(--brown-light);}
-  .row-actions{display:flex;gap:4px;justify-content:flex-end;}
-  .remove-btn, .edit-btn{background:none;border:none;font-size:.75rem;cursor:pointer;padding:4px 8px;border-radius:6px;}
-  .remove-btn{color:var(--red);}
+  .row-actions{display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap;}
+  .remove-btn, .edit-btn, .status-btn{background:none;font-size:.75rem;cursor:pointer;padding:4px 8px;border-radius:6px;white-space:nowrap;}
+  .remove-btn{border:none;color:var(--red);}
   .remove-btn:hover{background:#FBEAE4;}
-  .edit-btn{color:var(--blue);}
+  .edit-btn{border:none;color:var(--blue);}
   .edit-btn:hover{background:var(--blue-bg);}
+  .status-btn{border:1px solid transparent;font-weight:600;}
+  .status-btn.to-delivered{border-color:var(--delivered-fg);color:var(--delivered-fg);}
+  .status-btn.to-delivered:hover{background:var(--delivered-bg);}
+  .status-btn.to-pending{border-color:var(--accent-dark);color:var(--accent-dark);}
+  .status-btn.to-pending:hover{background:var(--pending-bg);}
   .detail-row td{background:#FBF6EC;font-size:.85rem;}
   .detail-grid{display:grid;grid-template-columns:1fr;gap:12px;}
   @media(min-width:640px){.detail-grid{grid-template-columns:1fr 1fr;}}
@@ -170,7 +175,10 @@
         <button data-filter="pending">Pending</button>
         <button data-filter="delivered">Delivered</button>
       </div>
-      <input type="text" id="searchInput" placeholder="Search name, phone, order #">
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="text" id="searchInput" placeholder="Search name, phone, order #">
+        <button class="btn btn-ghost small" id="exportBtn">⬇ Download CSV</button>
+      </div>
     </div>
 
     <div id="tableArea"></div>
@@ -444,9 +452,10 @@ function render(){
         <td class="mode-cell">${escapeHtml(o.fulfilment || '—')}</td>
         <td class="right total-cell">AED ${o.total.toFixed(0)}</td>
         <td>${leadTimeHtml}</td>
-        <td><button class="pill ${o.status}" data-toggle="${escapeHtml(o.id)}">${o.status === 'pending' ? 'Pending' : 'Delivered'}</button></td>
+        <td><span class="pill ${o.status}">${o.status === 'pending' ? 'Pending' : 'Delivered'}</span></td>
         <td class="right">
           <div class="row-actions">
+            <button class="status-btn ${o.status === 'pending' ? 'to-delivered' : 'to-pending'}" data-toggle="${escapeHtml(o.id)}">${o.status === 'pending' ? 'Mark Delivered' : 'Mark Pending'}</button>
             <button class="edit-btn" data-edit="${escapeHtml(o.id)}">Edit</button>
             <button class="remove-btn" data-remove="${escapeHtml(o.id)}">Remove</button>
           </div>
@@ -554,6 +563,65 @@ function wireItemRemove(row){
   btn.addEventListener('click', ()=>{ row.remove(); });
 }
 
+// ---------- CSV export ----------
+function csvEscape(val){
+  const s = String(val ?? '');
+  if(/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+function currentFilteredList(){
+  let list = orders;
+  if(filter !== 'all') list = list.filter(o=>o.status===filter);
+  if(query.trim()){
+    const q = query.trim().toLowerCase();
+    list = list.filter(o =>
+      o.id.toLowerCase().includes(q) || o.name.toLowerCase().includes(q) || o.phone.toLowerCase().includes(q)
+    );
+  }
+  return list;
+}
+function exportCSV(){
+  const list = currentFilteredList();
+  if(list.length === 0){ showToast('Nothing to export — no orders match the current view.'); return; }
+
+  const headers = [
+    'Order #','Name','Phone','Fulfilment','Area','Address','Items','Total (AED)',
+    'Preferred Date','Preferred Time','Notes','Status','Received At','Delivered At','Lead Time'
+  ];
+  const rows = list.map(o => {
+    const itemsSummary = o.items.map(it => {
+      const flavors = it.flavors && it.flavors.length ? ` [${it.flavors.join('; ')}]` : '';
+      return `${it.name} x${it.qty}${flavors}`;
+    }).join(' | ');
+    let leadTime = '';
+    if(o.status === 'delivered' && o.deliveredAt){
+      leadTime = formatDuration(new Date(o.deliveredAt) - new Date(o.receivedAt));
+    } else {
+      leadTime = 'waiting ' + formatDuration(Date.now() - new Date(o.receivedAt));
+    }
+    return [
+      o.id, o.name, o.phone, o.fulfilment, o.area, o.address, itemsSummary, o.total.toFixed(2),
+      o.prefDate, o.prefTime, o.notes, o.status,
+      new Date(o.receivedAt).toLocaleString(),
+      o.deliveredAt ? new Date(o.deliveredAt).toLocaleString() : '',
+      leadTime
+    ];
+  });
+
+  const csv = [headers, ...rows].map(r => r.map(csvEscape).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `always-bready-orders-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast(`Exported ${list.length} order${list.length!==1?'s':''} to CSV.`);
+}
+
 // ---------- Realtime sync ----------
 function subscribeRealtime(){
   if(channel) sb.removeChannel(channel);
@@ -624,6 +692,7 @@ document.getElementById('searchInput').addEventListener('input', (e)=>{
   query = e.target.value;
   render();
 });
+document.getElementById('exportBtn').addEventListener('click', exportCSV);
 
 init();
 </script>

@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Always Bready — Order Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --cream:#FAF4E9; --card:#FFFDF8; --border:#EEDFC4; --border2:#E7D6B4;
+    --brown-dark:#5C3A21; --brown-mid:#7A6248; --brown-light:#9C8163; --text:#4A3A26;
+    --accent:#C87F3D; --accent-dark:#8A5A1E;
+    --pending-bg:#FBEBD3; --pending-fg:#8A5A1E;
+    --fulfilled-bg:#DCEBD8; --fulfilled-fg:#2F6B3A;
+    --red:#B5654A;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--cream);font-family:'Poppins',ui-sans-serif,system-ui,sans-serif;color:var(--text);}
+  .display{font-family:'Fraunces',serif;}
+  .wrap{max-width:960px;margin:0 auto;padding:32px 20px 60px;}
+  .header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:24px;}
+  .header h1{font-size:1.9rem;color:var(--brown-dark);margin:0;}
+  .header p{font-size:.85rem;color:var(--brown-light);margin:2px 0 0;}
+  .header-actions{display:flex;gap:8px;align-items:center;}
+  .btn{padding:10px 16px;border-radius:10px;font-weight:600;font-size:.85rem;border:none;cursor:pointer;color:#fff;background:var(--accent);box-shadow:0 1px 2px rgba(0,0,0,.06);transition:filter .15s;}
+  .btn:hover{filter:brightness(1.06);}
+  .btn-dark{background:var(--accent-dark);}
+  .btn-ghost{background:transparent;color:var(--brown-mid);border:1px solid var(--border2);}
+  .paste-box{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:24px;}
+  .paste-box p{font-size:.85rem;color:var(--brown-mid);margin:0 0 8px;}
+  textarea{width:100%;height:160px;border-radius:10px;padding:12px;font-size:.85rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#FBF6EC;border:1px solid var(--border2);color:var(--text);resize:vertical;}
+  .paste-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px;}
+  .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:24px;}
+  @media(min-width:640px){.stats{grid-template-columns:repeat(4,1fr);}}
+  .stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;}
+  .stat .label{font-size:.72rem;color:var(--brown-light);}
+  .stat .value{font-size:1.35rem;font-weight:700;color:var(--brown-dark);}
+  .stat.pending .value{color:var(--accent-dark);}
+  .stat.fulfilled .value{color:var(--fulfilled-fg);}
+  .toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;}
+  .tabs{display:flex;gap:4px;background:#F1E6D2;border-radius:10px;padding:4px;}
+  .tabs button{border:none;background:transparent;padding:7px 14px;border-radius:8px;font-size:.78rem;font-weight:600;color:var(--brown-light);cursor:pointer;text-transform:capitalize;}
+  .tabs button.active{background:var(--card);color:var(--brown-dark);}
+  input[type="text"], input[type="email"], input[type="password"]{padding:8px 12px;border-radius:10px;font-size:.85rem;border:1px solid var(--border);background:var(--card);color:var(--text);outline:none;}
+  table{width:100%;border-collapse:collapse;font-size:.87rem;background:var(--card);}
+  .table-wrap{border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+  thead tr{background:#F1E6D2;color:var(--brown-mid);}
+  th{text-align:left;padding:10px 12px;font-weight:600;font-size:.78rem;}
+  th.right, td.right{text-align:right;}
+  tbody tr.order-row{border-top:1px solid #F1E6D2;cursor:pointer;}
+  td{padding:10px 12px;vertical-align:top;}
+  .order-id{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--brown-dark);}
+  .cust-name{font-weight:500;color:var(--text);}
+  .cust-phone{font-size:.75rem;color:var(--brown-light);}
+  .mode-cell{text-transform:capitalize;color:var(--brown-mid);}
+  .total-cell{font-weight:600;color:var(--brown-dark);}
+  .pill{border:none;border-radius:999px;padding:6px 12px;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap;letter-spacing:.02em;}
+  .pill.pending{background:var(--pending-bg);color:var(--pending-fg);}
+  .pill.fulfilled{background:var(--fulfilled-bg);color:var(--fulfilled-fg);}
+  .remove-btn{background:none;border:none;color:var(--red);font-size:.75rem;cursor:pointer;padding:4px 8px;border-radius:6px;}
+  .remove-btn:hover{background:#FBEAE4;}
+  .detail-row td{background:#FBF6EC;font-size:.85rem;}
+  .detail-grid{display:grid;grid-template-columns:1fr;gap:12px;}
+  @media(min-width:640px){.detail-grid{grid-template-columns:1fr 1fr;}}
+  .detail-grid .field{margin-bottom:4px;}
+  .detail-grid .field b{color:var(--brown-dark);}
+  ul.items-list{margin:4px 0 0;padding-left:18px;}
+  ul.flavors{margin:2px 0 0;padding-left:16px;font-size:.75rem;color:var(--brown-light);}
+  .empty{text-align:center;padding:60px 20px;border:1px dashed var(--border2);border-radius:16px;color:var(--brown-light);background:var(--card);}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--brown-dark);color:#fff;padding:10px 18px;border-radius:10px;font-size:.85rem;box-shadow:0 4px 14px rgba(0,0,0,.15);opacity:0;pointer-events:none;transition:opacity .25s;z-index:50;}
+  .toast.show{opacity:1;}
+  .hidden{display:none !important;}
+  .sync-dot{width:8px;height:8px;border-radius:50%;background:#2F6B3A;display:inline-block;margin-right:6px;}
+  .sync-dot.off{background:#B5654A;}
+  .sync-label{font-size:.72rem;color:var(--brown-light);display:flex;align-items:center;}
+
+  /* Login screen */
+  #loginScreen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .login-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px;max-width:360px;width:100%;box-shadow:0 4px 18px rgba(92,58,33,.08);}
+  .login-card h1{font-size:1.6rem;color:var(--brown-dark);margin:0 0 4px;}
+  .login-card p{font-size:.82rem;color:var(--brown-light);margin:0 0 20px;}
+  .login-card label{font-size:.78rem;font-weight:600;color:var(--brown-mid);display:block;margin-bottom:4px;}
+  .login-card input{width:100%;margin-bottom:14px;}
+  .login-card .btn{width:100%;}
+  .login-error{color:var(--red);font-size:.8rem;margin-bottom:10px;min-height:1em;}
+  .config-warning{background:#FBEAE4;border:1px solid #EFC9BC;color:#8A3B24;padding:14px 16px;border-radius:12px;font-size:.82rem;max-width:480px;margin:60px auto;line-height:1.5;}
+  .config-warning code{background:#FFF3EE;padding:1px 5px;border-radius:4px;}
+</style>
+</head>
+<body>
+
+<div id="configWarning" class="hidden">
+  <div class="config-warning">
+    <b>Backend not connected yet.</b><br><br>
+    Open this file and fill in <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> near the top of the <code>&lt;script&gt;</code> section with the values from your Supabase project (Project Settings → API). See the setup guide for the full walkthrough.
+  </div>
+</div>
+
+<div id="loginScreen" class="hidden">
+  <div class="login-card">
+    <h1 class="display">Always Bready</h1>
+    <p>Sign in to view your orders.</p>
+    <div class="login-error" id="loginError"></div>
+    <label for="loginEmail">Email</label>
+    <input type="email" id="loginEmail" placeholder="you@example.com">
+    <label for="loginPassword">Password</label>
+    <input type="password" id="loginPassword" placeholder="••••••••">
+    <button class="btn" id="loginBtn">Sign in</button>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <div class="wrap">
+    <div class="header">
+      <div>
+        <h1 class="display">Always Bready</h1>
+        <p>WhatsApp order tracker — kasi puno na yung chat, di ba?</p>
+      </div>
+      <div class="header-actions">
+        <span class="sync-label"><span class="sync-dot" id="syncDot"></span><span id="syncText">Live</span></span>
+        <button class="btn" id="toggleBtn">+ Add orders</button>
+        <button class="btn btn-ghost" id="logoutBtn">Sign out</button>
+      </div>
+    </div>
+
+    <div class="paste-box" id="pasteBox">
+      <p>Paste one or more order messages copied straight from WhatsApp. Multiple orders in one paste? No problem — it splits them automatically.</p>
+      <textarea id="pasteInput" placeholder="New order #ABrdy-1234 — Always Bready
+
+- Ube Pandesal x2 (AED 20)
+..."></textarea>
+      <div class="paste-actions">
+        <button class="btn btn-dark" id="parseBtn">Parse orders</button>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="label">Total orders</div><div class="value" id="statTotal">0</div></div>
+      <div class="stat pending"><div class="label">Pending</div><div class="value" id="statPending">0</div></div>
+      <div class="stat fulfilled"><div class="label">Fulfilled</div><div class="value" id="statFulfilled">0</div></div>
+      <div class="stat"><div class="label">Total revenue</div><div class="value" id="statRevenue">AED 0</div></div>
+    </div>
+
+    <div class="toolbar">
+      <div class="tabs" id="tabs">
+        <button data-filter="all" class="active">All</button>
+        <button data-filter="pending">Pending</button>
+        <button data-filter="fulfilled">Fulfilled</button>
+      </div>
+      <input type="text" id="searchInput" placeholder="Search name, phone, order #">
+    </div>
+
+    <div id="tableArea"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =====================================================================
+   1) FILL THESE IN — from your Supabase project → Settings → API
+   ===================================================================== */
+const SUPABASE_URL = "YOUR_SUPABASE_URL";
+const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+/* ===================================================================== */
+
+if(!SUPABASE_URL.startsWith("http") || SUPABASE_ANON_KEY === "YOUR_SUPABASE_ANON_KEY"){
+  document.getElementById('configWarning').classList.remove('hidden');
+  throw new Error("Supabase not configured — see setup guide.");
+}
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let orders = [];
+let filter = 'all';
+let query = '';
+let expandedId = null;
+let channel = null;
+
+// ---------- Row <-> App object mapping ----------
+function toRow(o){
+  return {
+    id: o.id, name: o.name, phone: o.phone, fulfilment: o.fulfilment,
+    area: o.area, address: o.address, total: o.total,
+    pref_date: o.prefDate, pref_time: o.prefTime, notes: o.notes,
+    items: o.items, status: o.status, received_at: o.receivedAt
+  };
+}
+function fromRow(r){
+  return {
+    id: r.id, name: r.name || '', phone: r.phone || '', fulfilment: r.fulfilment || '',
+    area: r.area || '', address: r.address || '', total: r.total || 0,
+    prefDate: r.pref_date || '', prefTime: r.pref_time || '', notes: r.notes || '',
+    items: r.items || [], status: r.status || 'pending', receivedAt: r.received_at
+  };
+}
+
+// ---------- Parsing (same format the site's checkout button generates) ----------
+function splitMessages(raw){
+  return raw.split(/(?=New order #)/g).map(s=>s.trim()).filter(s=>s.startsWith('New order #'));
+}
+function field(msg, label){
+  const m = msg.match(new RegExp(label + ':\\s*(.+)'));
+  return m ? m[1].trim() : '';
+}
+function parseOne(msg){
+  const orderNoMatch = msg.match(/New order #(\S+)/);
+  const totalMatch = msg.match(/Total:\s*AED\s*([\d.]+)/);
+  const itemsBlockMatch = msg.match(/Always Bready\s*\n\n([\s\S]*?)\n\nTotal:/);
+  const items = [];
+  if(itemsBlockMatch){
+    let current = null;
+    itemsBlockMatch[1].split('\n').forEach(line=>{
+      const itemMatch = line.match(/^-\s(.+?)\sx(\d+)\s\(AED\s([\d.]+)\)/);
+      if(itemMatch){
+        current = {name:itemMatch[1], qty:+itemMatch[2], price:+itemMatch[3], flavors:[]};
+        items.push(current);
+      } else if(/^\s{3,}-\s/.test(line) && current){
+        current.flavors.push(line.trim().replace(/^-\s*/,''));
+      }
+    });
+  }
+  return {
+    id: orderNoMatch ? orderNoMatch[1] : 'ORD-' + Date.now() + Math.floor(Math.random()*1000),
+    total: totalMatch ? parseFloat(totalMatch[1]) : 0,
+    name: field(msg,'Name'), phone: field(msg,'Phone'), fulfilment: field(msg,'Fulfilment'),
+    area: field(msg,'Area'), address: field(msg,'Address'),
+    prefDate: field(msg,'Preferred date'), prefTime: field(msg,'Preferred time'), notes: field(msg,'Notes'),
+    items, status: 'pending', receivedAt: new Date().toISOString()
+  };
+}
+function parseAll(raw){
+  return splitMessages(raw).map(parseOne).filter(o => o.name || o.total);
+}
+
+// ---------- Toast ----------
+let toastTimer;
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> t.classList.remove('show'), 2500);
+}
+
+// ---------- Backend calls ----------
+async function fetchOrders(){
+  const { data, error } = await sb.from('orders').select('*').order('received_at', {ascending:false});
+  if(error){ showToast('Could not load orders: ' + error.message); return; }
+  orders = (data || []).map(fromRow);
+  render();
+}
+
+async function handleParse(){
+  const raw = document.getElementById('pasteInput').value;
+  const parsed = parseAll(raw);
+  if(parsed.length === 0){
+    showToast("No orders found in that text — check it's copied from WhatsApp.");
+    return;
+  }
+  const existingMap = new Map(orders.map(o => [o.id, o]));
+  const merged = parsed.map(p => {
+    const existing = existingMap.get(p.id);
+    return existing ? {...p, status: existing.status, receivedAt: existing.receivedAt} : p;
+  });
+  const added = merged.filter(p => !existingMap.has(p.id)).length;
+  const updated = merged.length - added;
+
+  const { error } = await sb.from('orders').upsert(merged.map(toRow), { onConflict: 'id' });
+  if(error){ showToast('Save failed: ' + error.message); return; }
+
+  showToast(`Added ${added} new order${added!==1?'s':''}${updated ? `, ${updated} already tracked` : ''}.`);
+  document.getElementById('pasteInput').value = '';
+  document.getElementById('pasteBox').classList.add('hidden');
+  await fetchOrders();
+}
+
+async function toggleStatus(id){
+  const o = orders.find(o=>o.id===id);
+  if(!o) return;
+  const newStatus = o.status === 'pending' ? 'fulfilled' : 'pending';
+  const { error } = await sb.from('orders').update({ status: newStatus }).eq('id', id);
+  if(error){ showToast('Update failed: ' + error.message); return; }
+  o.status = newStatus;
+  render();
+}
+
+async function deleteOrder(id){
+  const { error } = await sb.from('orders').delete().eq('id', id);
+  if(error){ showToast('Delete failed: ' + error.message); return; }
+  orders = orders.filter(o=>o.id!==id);
+  showToast('Order removed.');
+  render();
+}
+
+function toggleExpand(id){
+  expandedId = expandedId === id ? null : id;
+  render();
+}
+
+// ---------- Render ----------
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function render(){
+  const total = orders.length;
+  const pending = orders.filter(o=>o.status==='pending').length;
+  const fulfilled = orders.filter(o=>o.status==='fulfilled').length;
+  const revenue = orders.reduce((s,o)=>s+o.total,0);
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statPending').textContent = pending;
+  document.getElementById('statFulfilled').textContent = fulfilled;
+  document.getElementById('statRevenue').textContent = 'AED ' + revenue.toFixed(0);
+
+  let list = orders;
+  if(filter !== 'all') list = list.filter(o=>o.status===filter);
+  if(query.trim()){
+    const q = query.trim().toLowerCase();
+    list = list.filter(o =>
+      o.id.toLowerCase().includes(q) || o.name.toLowerCase().includes(q) || o.phone.toLowerCase().includes(q)
+    );
+  }
+
+  const area = document.getElementById('tableArea');
+  if(list.length === 0){
+    area.innerHTML = `<div class="empty">${orders.length===0 ? 'No orders yet. Paste your first WhatsApp order above to get started.' : 'No orders match this filter.'}</div>`;
+    return;
+  }
+
+  let rows = '';
+  list.forEach(o=>{
+    rows += `
+      <tr class="order-row" data-id="${escapeHtml(o.id)}">
+        <td class="order-id">${escapeHtml(o.id)}</td>
+        <td><div class="cust-name">${escapeHtml(o.name || '—')}</div><div class="cust-phone">${escapeHtml(o.phone)}</div></td>
+        <td class="mode-cell">${escapeHtml(o.fulfilment || '—')}</td>
+        <td class="right total-cell">AED ${o.total.toFixed(0)}</td>
+        <td><button class="pill ${o.status}" data-toggle="${escapeHtml(o.id)}">${o.status === 'pending' ? 'Pending' : 'Fulfilled'}</button></td>
+        <td class="right"><button class="remove-btn" data-remove="${escapeHtml(o.id)}">Remove</button></td>
+      </tr>`;
+    if(expandedId === o.id){
+      const itemsHtml = o.items.map(it => `
+        <li>${escapeHtml(it.name)} x${it.qty} — AED ${it.price}
+          ${it.flavors && it.flavors.length ? `<ul class="flavors">${it.flavors.map(f=>`<li>• ${escapeHtml(f)}</li>`).join('')}</ul>` : ''}
+        </li>`).join('');
+      rows += `
+        <tr class="detail-row">
+          <td colspan="6">
+            <div class="detail-grid">
+              <div><div class="field"><b>Items</b></div><ul class="items-list">${itemsHtml}</ul></div>
+              <div>
+                ${o.area ? `<div class="field"><b>Area:</b> ${escapeHtml(o.area)}</div>` : ''}
+                ${o.address ? `<div class="field"><b>Address:</b> ${escapeHtml(o.address)}</div>` : ''}
+                ${o.prefDate ? `<div class="field"><b>Preferred date:</b> ${escapeHtml(o.prefDate)}</div>` : ''}
+                ${o.prefTime ? `<div class="field"><b>Preferred time:</b> ${escapeHtml(o.prefTime)}</div>` : ''}
+                ${o.notes ? `<div class="field"><b>Notes:</b> ${escapeHtml(o.notes)}</div>` : ''}
+              </div>
+            </div>
+          </td>
+        </tr>`;
+    }
+  });
+
+  area.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Order #</th><th>Customer</th><th>Mode</th><th class="right">Total</th><th>Status</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  area.querySelectorAll('.order-row').forEach(row=>{
+    row.addEventListener('click', (e)=>{ if(e.target.closest('button')) return; toggleExpand(row.dataset.id); });
+  });
+  area.querySelectorAll('[data-toggle]').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{ e.stopPropagation(); toggleStatus(btn.dataset.toggle); });
+  });
+  area.querySelectorAll('[data-remove]').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{ e.stopPropagation(); deleteOrder(btn.dataset.remove); });
+  });
+}
+
+// ---------- Realtime sync ----------
+function subscribeRealtime(){
+  if(channel) sb.removeChannel(channel);
+  channel = sb.channel('orders-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+      fetchOrders();
+    })
+    .subscribe((status) => {
+      const dot = document.getElementById('syncDot');
+      const label = document.getElementById('syncText');
+      if(status === 'SUBSCRIBED'){ dot.classList.remove('off'); label.textContent = 'Live'; }
+      else if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT'){ dot.classList.add('off'); label.textContent = 'Offline'; }
+    });
+}
+
+// ---------- Auth ----------
+async function showApp(){
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  await fetchOrders();
+  subscribeRealtime();
+}
+function showLogin(){
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('loginScreen').classList.remove('hidden');
+}
+
+async function init(){
+  const { data: { session } } = await sb.auth.getSession();
+  if(session) await showApp(); else showLogin();
+
+  sb.auth.onAuthStateChange((event, session) => {
+    if(event === 'SIGNED_IN') showApp();
+    if(event === 'SIGNED_OUT') showLogin();
+  });
+}
+
+document.getElementById('loginBtn').addEventListener('click', async ()=>{
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if(error) errEl.textContent = error.message;
+});
+document.getElementById('logoutBtn').addEventListener('click', async ()=>{
+  if(channel) sb.removeChannel(channel);
+  await sb.auth.signOut();
+});
+
+// ---------- Event wiring ----------
+document.getElementById('toggleBtn').addEventListener('click', ()=>{
+  document.getElementById('pasteBox').classList.toggle('hidden');
+});
+document.getElementById('parseBtn').addEventListener('click', handleParse);
+document.getElementById('tabs').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button');
+  if(!btn) return;
+  filter = btn.dataset.filter;
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  render();
+});
+document.getElementById('searchInput').addEventListener('input', (e)=>{
+  query = e.target.value;
+  render();
+});
+
+init();
+</script>
+</body>
+</html>

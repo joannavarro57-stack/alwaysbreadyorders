@@ -89,6 +89,15 @@
   @media(min-width:640px){.detail-grid{grid-template-columns:1fr 1fr;}}
   .detail-grid .field{margin-bottom:4px;}
   .detail-grid .field b{color:var(--brown-dark);}
+  .fulfill-section{margin-top:14px;padding-top:12px;border-top:1px dashed var(--border2);}
+  .fulfill-alldone{color:var(--delivered-fg);font-weight:600;font-size:.78rem;}
+  .fulfill-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;font-size:.82rem;}
+  .fulfill-name{color:var(--text);}
+  .fulfill-stepper{display:flex;align-items:center;gap:8px;}
+  .fulfill-count{min-width:52px;text-align:center;font-weight:600;color:var(--brown-dark);font-size:.8rem;}
+  .fulfill-btn{width:26px;height:26px;border-radius:8px;border:1px solid var(--border2);background:var(--card);color:var(--brown-dark);font-size:.9rem;font-weight:700;cursor:pointer;line-height:1;}
+  .fulfill-btn:hover:not(:disabled){background:var(--pending-bg);border-color:var(--accent);}
+  .fulfill-btn:disabled{opacity:.35;cursor:not-allowed;}
   ul.items-list{margin:4px 0 0;padding-left:18px;}
   ul.flavors{margin:2px 0 0;padding-left:16px;font-size:.75rem;color:var(--brown-light);}
   .empty{text-align:center;padding:60px 20px;border:1px dashed var(--border2);border-radius:16px;color:var(--brown-light);background:var(--card);}
@@ -181,7 +190,7 @@
 
     <div class="flavor-panel">
       <div class="flavor-panel-head">
-        <h2 id="flavorPanelTitle">Pending orders by flavor : Total </h2>
+        <h2 id="flavorPanelTitle">Pending orders by flavor</h2>
         <span class="sub" id="flavorPanelSub"></span>
       </div>
       <div class="flavor-grid" id="flavorGrid"></div>
@@ -239,7 +248,8 @@ function toRow(o){
     area: o.area, address: o.address, total: o.total,
     pref_date: o.prefDate, pref_time: o.prefTime, notes: o.notes,
     items: o.items, status: o.status, received_at: o.receivedAt,
-    delivered_at: o.deliveredAt || null
+    delivered_at: o.deliveredAt || null,
+    fulfilled_flavors: o.fulfilledFlavors || {}
   };
 }
 function fromRow(r){
@@ -248,7 +258,8 @@ function fromRow(r){
     area: r.area || '', address: r.address || '', total: r.total || 0,
     prefDate: r.pref_date || '', prefTime: r.pref_time || '', notes: r.notes || '',
     items: r.items || [], status: r.status || 'pending', receivedAt: r.received_at,
-    deliveredAt: r.delivered_at || null
+    deliveredAt: r.delivered_at || null,
+    fulfilledFlavors: r.fulfilled_flavors || {}
   };
 }
 
@@ -374,6 +385,23 @@ async function saveEdit(id, patch){
   return true;
 }
 
+// Confirms `newQty` units of a given flavor as fulfilled for one order (e.g.
+// "3 of 6 corned beef confirmed"). Confirmed quantities are excluded from the
+// combined "Pending orders by flavor" totals.
+async function setFlavorFulfilled(orderId, flavorName, newQty){
+  const o = orders.find(o=>o.id===orderId);
+  if(!o) return;
+  const totals = new Map(getOrderFlavorTotals(o));
+  const max = totals.get(flavorName) || 0;
+  const clamped = Math.max(0, Math.min(newQty, max));
+
+  const updatedFulfilled = { ...(o.fulfilledFlavors || {}), [flavorName]: clamped };
+  const { error } = await sb.from('orders').update({ fulfilled_flavors: updatedFulfilled }).eq('id', orderId);
+  if(error){ showToast('Could not save confirmation: ' + error.message); return; }
+  o.fulfilledFlavors = updatedFulfilled;
+  render();
+}
+
 function toggleExpand(id){
   if(editingId === id) return; // don't collapse while editing
   expandedId = expandedId === id ? null : id;
@@ -432,54 +460,103 @@ function renderEditForm(o){
 }
 
 // ---------- Pending-by-flavor breakdown ----------
-// For each item on a pending order: if it has a flavor breakdown (e.g. a "Build
-// Your Own Box"), count each listed flavor once. If it has no flavor breakdown,
-// the item itself IS the flavor (e.g. a plain "Ube Pandesal x2"), so its qty is
-// added under its own name.
-function computeFlavorCounts(){
-  const counts = new Map();
+// Parses a flavor/item line like "Pandesal con Corned Beef x8" into
+// { name: "Pandesal con Corned Beef", qty: 8 }. If no quantity is present
+// in the string, qty defaults to 1.
+function parseNameQty(raw){
+  if(!raw) return { name: raw, qty: 1 };
+  let name = raw.trim();
+  let qty = null;
+
+  let m = name.match(/^(.*?)\s*\(\s*x\s*(\d+)\s*\)\s*$/i);      // "Name (x8)"
+  if(!m) m = name.match(/^(.*?)\s*[x×]\s*(\d+)\s*$/i);          // "Name x8"
+  if(!m) m = name.match(/^(\d+)\s*[x×]\s*(.*)$/i);              // "8x Name"
+
+  if(m){
+    if(/^\d+$/.test(m[1])){ // "8x Name" form -> qty is m[1], name is m[2]
+      qty = parseInt(m[1], 10);
+      name = m[2].trim();
+    } else {                // "Name x8" form -> name is m[1], qty is m[2]
+      name = m[1].trim();
+      qty = parseInt(m[2], 10);
+    }
+  }
+  return { name, qty: qty || 1 };
+}
+
+// For each item on an order: if it has a flavor breakdown (e.g. a "Build Your
+// Own Box"), each flavor line describes the composition of ONE box, so its
+// qty is multiplied by how many boxes were ordered (it.qty). If an item has
+// no flavor breakdown, the item itself IS the flavor (e.g. a plain "Ube
+// Pandesal x2"), so its own qty is used. Returns [ [flavorName, totalQty], ... ]
+// for a single order — this is the total ORDERED amount, before subtracting
+// anything already confirmed/fulfilled.
+function getOrderFlavorTotals(o){
+  const totals = new Map();
   const bump = (name, n) => {
     if(!name) return;
-    counts.set(name, (counts.get(name) || 0) + n);
+    totals.set(name, (totals.get(name) || 0) + n);
   };
-  // Parses a flavor/item line like "Pandesal con Corned Beef x8" into
-  // { name: "Pandesal con Corned Beef", qty: 8 }. If no quantity is present
-  // in the string, qty defaults to 1 (the caller may override this).
-  const parseNameQty = (raw) => {
-    if(!raw) return { name: raw, qty: 1 };
-    let name = raw.trim();
-    let qty = null;
-
-    let m = name.match(/^(.*?)\s*\(\s*x\s*(\d+)\s*\)\s*$/i);      // "Name (x8)"
-    if(!m) m = name.match(/^(.*?)\s*[x×]\s*(\d+)\s*$/i);          // "Name x8"
-    if(!m) m = name.match(/^(\d+)\s*[x×]\s*(.*)$/i);              // "8x Name"
-
-    if(m){
-      if(/^\d+$/.test(m[1])){ // "8x Name" form -> qty is m[1], name is m[2]
-        qty = parseInt(m[1], 10);
-        name = m[2].trim();
-      } else {                // "Name x8" form -> name is m[1], qty is m[2]
-        name = m[1].trim();
-        qty = parseInt(m[2], 10);
-      }
+  (o.items || []).forEach(it => {
+    const boxCount = it.qty || 1;
+    if(it.flavors && it.flavors.length){
+      it.flavors.forEach(f => {
+        const { name, qty } = parseNameQty(f);
+        bump(name, qty * boxCount);
+      });
+    } else {
+      const { name } = parseNameQty(it.name);
+      bump(name, boxCount);
     }
-    return { name, qty: qty || 1 };
-  };
+  });
+  return [...totals.entries()];
+}
 
+// Combined total pending REMAINING per flavor, across every pending order —
+// i.e. ordered qty minus whatever's already been confirmed for that order.
+function computeFlavorCounts(){
+  const counts = new Map();
   orders.filter(o => o.status === 'pending').forEach(o => {
-    (o.items || []).forEach(it => {
-      if(it.flavors && it.flavors.length){
-        it.flavors.forEach(f => {
-          const { name, qty } = parseNameQty(f);
-          bump(name, qty);
-        });
-      } else {
-        const { name } = parseNameQty(it.name);
-        bump(name, it.qty || 1);
+    const fulfilled = o.fulfilledFlavors || {};
+    getOrderFlavorTotals(o).forEach(([name, total]) => {
+      const done = Math.min(fulfilled[name] || 0, total);
+      const remaining = total - done;
+      if(remaining > 0){
+        counts.set(name, (counts.get(name) || 0) + remaining);
       }
     });
   });
   return [...counts.entries()].sort((a,b) => b[1] - a[1]);
+}
+
+// Renders the "confirm flavors" stepper section shown inside an expanded
+// pending order. Each flavor shows "confirmed / total" with +/- buttons.
+// Confirming a flavor here removes those units from the combined pending
+// total shown in the top panel, without changing the order's overall status.
+function renderFulfillSection(o){
+  const totals = getOrderFlavorTotals(o);
+  if(totals.length === 0) return '';
+  const fulfilled = o.fulfilledFlavors || {};
+  const allDone = totals.every(([name, total]) => (fulfilled[name] || 0) >= total);
+
+  const rows = totals.map(([name, total]) => {
+    const done = Math.min(fulfilled[name] || 0, total);
+    return `
+      <div class="fulfill-row" data-order="${escapeHtml(o.id)}" data-flavor="${escapeHtml(name)}" data-total="${total}">
+        <span class="fulfill-name">${escapeHtml(name)}</span>
+        <div class="fulfill-stepper">
+          <button type="button" class="fulfill-btn fulfill-dec" ${done<=0?'disabled':''}>−</button>
+          <span class="fulfill-count">${done} / ${total}</span>
+          <button type="button" class="fulfill-btn fulfill-inc" ${done>=total?'disabled':''}>+</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="fulfill-section">
+      <div class="field"><b>Confirm flavors</b>${allDone ? ' <span class="fulfill-alldone">✓ all confirmed</span>' : ''}</div>
+      ${rows}
+    </div>`;
 }
 
 function renderFlavorPanel(){
@@ -568,11 +645,15 @@ function render(){
           <li>${escapeHtml(it.name)} x${it.qty} — AED ${it.price}
             ${it.flavors && it.flavors.length ? `<ul class="flavors">${it.flavors.map(f=>`<li>• ${escapeHtml(f)}</li>`).join('')}</ul>` : ''}
           </li>`).join('');
+        const fulfillHtml = o.status === 'pending' ? renderFulfillSection(o) : '';
         rows += `
           <tr class="detail-row">
             <td colspan="7">
               <div class="detail-grid">
-                <div><div class="field"><b>Items</b></div><ul class="items-list">${itemsHtml}</ul></div>
+                <div>
+                  <div class="field"><b>Items</b></div><ul class="items-list">${itemsHtml}</ul>
+                  ${fulfillHtml}
+                </div>
                 <div>
                   ${o.area ? `<div class="field"><b>Area:</b> ${escapeHtml(o.area)}</div>` : ''}
                   ${o.address ? `<div class="field"><b>Address:</b> ${escapeHtml(o.address)}</div>` : ''}
@@ -655,6 +736,26 @@ function render(){
       if(ok){ editingId = null; await fetchOrders(); }
     });
   }
+
+  // Flavor-fulfillment stepper wiring
+  area.querySelectorAll('.fulfill-row').forEach(row=>{
+    const orderId = row.dataset.order;
+    const flavorName = row.dataset.flavor;
+    const total = parseInt(row.dataset.total, 10) || 0;
+    const o = orders.find(o => o.id === orderId);
+    const current = Math.min((o && o.fulfilledFlavors && o.fulfilledFlavors[flavorName]) || 0, total);
+
+    const dec = row.querySelector('.fulfill-dec');
+    const inc = row.querySelector('.fulfill-inc');
+    if(dec) dec.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      setFlavorFulfilled(orderId, flavorName, current - 1);
+    });
+    if(inc) inc.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      setFlavorFulfilled(orderId, flavorName, current + 1);
+    });
+  });
 }
 function wireItemRemove(row){
   const btn = row.querySelector('.ef-remove-item');

@@ -40,6 +40,16 @@
   .stat .value{font-size:1.35rem;font-weight:700;color:var(--brown-dark);}
   .stat.pending .value{color:var(--accent-dark);}
   .stat.delivered .value{color:var(--delivered-fg);}
+
+  .flavor-panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:24px;}
+  .flavor-panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px;}
+  .flavor-panel-head h2{font-size:1rem;margin:0;color:var(--brown-dark);}
+  .flavor-panel-head .sub{font-size:.75rem;color:var(--brown-light);}
+  .flavor-grid{display:flex;flex-wrap:wrap;gap:8px;}
+  .flavor-chip{display:flex;align-items:center;gap:8px;background:var(--pending-bg);color:var(--pending-fg);border-radius:10px;padding:8px 12px;font-size:.82rem;font-weight:600;}
+  .flavor-chip .count{background:var(--accent-dark);color:#fff;border-radius:999px;min-width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:.72rem;padding:0 6px;}
+  .flavor-empty{font-size:.85rem;color:var(--brown-light);}
+
   .toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;}
   .tabs{display:flex;gap:4px;background:#F1E6D2;border-radius:10px;padding:4px;}
   .tabs button{border:none;background:transparent;padding:7px 14px;border-radius:8px;font-size:.78rem;font-weight:600;color:var(--brown-light);cursor:pointer;text-transform:capitalize;}
@@ -169,6 +179,14 @@
       <div class="stat"><div class="label">Total revenue</div><div class="value" id="statRevenue">AED 0</div></div>
     </div>
 
+    <div class="flavor-panel">
+      <div class="flavor-panel-head">
+        <h2 id="flavorPanelTitle">Pending orders by flavor : Total </h2>
+        <span class="sub" id="flavorPanelSub"></span>
+      </div>
+      <div class="flavor-grid" id="flavorGrid"></div>
+    </div>
+
     <div class="toolbar">
       <div class="tabs" id="tabs">
         <button data-filter="all" class="active">All</button>
@@ -202,6 +220,9 @@ if(!SUPABASE_URL.startsWith("http") || SUPABASE_ANON_KEY === "YOUR_SUPABASE_ANON
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+/* How often to auto-refresh orders from the backend, in milliseconds. */
+const AUTO_REFRESH_MS = 60000;
+
 let orders = [];
 let filter = 'all';
 let query = '';
@@ -209,6 +230,7 @@ let expandedId = null;
 let editingId = null;
 let channel = null;
 let tickTimer = null;
+let refreshTimer = null;
 
 // ---------- Row <-> App object mapping ----------
 function toRow(o){
@@ -409,6 +431,80 @@ function renderEditForm(o){
     </div>`;
 }
 
+// ---------- Pending-by-flavor breakdown ----------
+// For each item on a pending order: if it has a flavor breakdown (e.g. a "Build
+// Your Own Box"), count each listed flavor once. If it has no flavor breakdown,
+// the item itself IS the flavor (e.g. a plain "Ube Pandesal x2"), so its qty is
+// added under its own name.
+function computeFlavorCounts(){
+  const counts = new Map();
+  const bump = (name, n) => {
+    if(!name) return;
+    counts.set(name, (counts.get(name) || 0) + n);
+  };
+  // Parses a flavor/item line like "Pandesal con Corned Beef x8" into
+  // { name: "Pandesal con Corned Beef", qty: 8 }. If no quantity is present
+  // in the string, qty defaults to 1 (the caller may override this).
+  const parseNameQty = (raw) => {
+    if(!raw) return { name: raw, qty: 1 };
+    let name = raw.trim();
+    let qty = null;
+
+    let m = name.match(/^(.*?)\s*\(\s*x\s*(\d+)\s*\)\s*$/i);      // "Name (x8)"
+    if(!m) m = name.match(/^(.*?)\s*[x×]\s*(\d+)\s*$/i);          // "Name x8"
+    if(!m) m = name.match(/^(\d+)\s*[x×]\s*(.*)$/i);              // "8x Name"
+
+    if(m){
+      if(/^\d+$/.test(m[1])){ // "8x Name" form -> qty is m[1], name is m[2]
+        qty = parseInt(m[1], 10);
+        name = m[2].trim();
+      } else {                // "Name x8" form -> name is m[1], qty is m[2]
+        name = m[1].trim();
+        qty = parseInt(m[2], 10);
+      }
+    }
+    return { name, qty: qty || 1 };
+  };
+
+  orders.filter(o => o.status === 'pending').forEach(o => {
+    (o.items || []).forEach(it => {
+      if(it.flavors && it.flavors.length){
+        it.flavors.forEach(f => {
+          const { name, qty } = parseNameQty(f);
+          bump(name, qty);
+        });
+      } else {
+        const { name } = parseNameQty(it.name);
+        bump(name, it.qty || 1);
+      }
+    });
+  });
+  return [...counts.entries()].sort((a,b) => b[1] - a[1]);
+}
+
+function renderFlavorPanel(){
+  const grid = document.getElementById('flavorGrid');
+  const title = document.getElementById('flavorPanelTitle');
+  const sub = document.getElementById('flavorPanelSub');
+  const counts = computeFlavorCounts();
+  const pendingCount = orders.filter(o => o.status === 'pending').length;
+  const totalUnits = counts.reduce((sum, [, count]) => sum + count, 0);
+
+  title.textContent = `Pending orders by flavor (${totalUnits})`;
+  sub.textContent = pendingCount ? `${pendingCount} pending order${pendingCount!==1?'s':''}` : '';
+
+  if(counts.length === 0){
+    grid.innerHTML = `<div class="flavor-empty">No pending orders right now.</div>`;
+    return;
+  }
+  // counts is already combined across every pending order/customer per flavor name
+  grid.innerHTML = counts.map(([name, count]) => `
+    <div class="flavor-chip">
+      <span>${escapeHtml(name)}</span>
+      <span class="count">${count}</span>
+    </div>`).join('');
+}
+
 function render(){
   const total = orders.length;
   const pending = orders.filter(o=>o.status==='pending').length;
@@ -418,6 +514,8 @@ function render(){
   document.getElementById('statPending').textContent = pending;
   document.getElementById('statDelivered').textContent = delivered;
   document.getElementById('statRevenue').textContent = 'AED ' + revenue.toFixed(0);
+
+  renderFlavorPanel();
 
   let list = orders;
   if(filter !== 'all') list = list.filter(o=>o.status===filter);
@@ -643,13 +741,22 @@ async function showApp(){
   document.getElementById('app').classList.remove('hidden');
   await fetchOrders();
   subscribeRealtime();
+
+  // Recompute the "waiting Xh" clocks every minute.
   if(tickTimer) clearInterval(tickTimer);
-  tickTimer = setInterval(()=>{ if(!editingId) render(); }, 60000); // refresh "waiting Xh" clocks
+  tickTimer = setInterval(()=>{ if(!editingId) render(); }, 60000);
+
+  // Auto-refresh from the backend every 60 seconds. This is a safety net on
+  // top of the realtime subscription above, in case realtime drops or someone
+  // else's browser session missed an event.
+  if(refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(()=>{ if(!editingId) fetchOrders(); }, AUTO_REFRESH_MS);
 }
 function showLogin(){
   document.getElementById('app').classList.add('hidden');
   document.getElementById('loginScreen').classList.remove('hidden');
   if(tickTimer) clearInterval(tickTimer);
+  if(refreshTimer) clearInterval(refreshTimer);
 }
 
 async function init(){

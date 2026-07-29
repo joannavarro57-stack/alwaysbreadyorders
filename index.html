@@ -34,12 +34,13 @@
   textarea{width:100%;height:160px;border-radius:10px;padding:12px;font-size:.85rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#FBF6EC;border:1px solid var(--border2);color:var(--text);resize:vertical;}
   .paste-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px;}
   .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:24px;}
-  @media(min-width:640px){.stats{grid-template-columns:repeat(4,1fr);}}
+  @media(min-width:640px){.stats{grid-template-columns:repeat(5,1fr);}}
   .stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;}
   .stat .label{font-size:.72rem;color:var(--brown-light);}
   .stat .value{font-size:1.35rem;font-weight:700;color:var(--brown-dark);}
   .stat.pending .value{color:var(--accent-dark);}
   .stat.delivered .value{color:var(--delivered-fg);}
+  .stat.cancelled .value{color:var(--red);}
 
   .flavor-panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:24px;}
   .flavor-panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px;}
@@ -70,9 +71,11 @@
   .pill{border:none;border-radius:999px;padding:6px 12px;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap;letter-spacing:.02em;}
   .pill.pending{background:var(--pending-bg);color:var(--pending-fg);}
   .pill.delivered{background:var(--delivered-bg);color:var(--delivered-fg);}
+  .pill.cancelled{background:#F3DED8;color:var(--red);}
   .leadtime{font-size:.75rem;white-space:nowrap;padding:4px 8px;border-radius:8px;}
   .leadtime.delivered{background:var(--blue-bg);color:var(--blue);}
   .leadtime.pending{color:var(--brown-light);}
+  .leadtime.cancelled{color:var(--red);}
   .row-actions{display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap;}
   .remove-btn, .edit-btn, .status-btn{background:none;font-size:.75rem;cursor:pointer;padding:4px 8px;border-radius:6px;white-space:nowrap;}
   .remove-btn{border:none;color:var(--red);}
@@ -136,6 +139,16 @@
   .login-error{color:var(--red);font-size:.8rem;margin-bottom:10px;min-height:1em;}
   .config-warning{background:#FBEAE4;border:1px solid #EFC9BC;color:#8A3B24;padding:14px 16px;border-radius:12px;font-size:.82rem;max-width:480px;margin:60px auto;line-height:1.5;}
   .config-warning code{background:#FFF3EE;padding:1px 5px;border-radius:4px;}
+
+  /* Delete/cancel confirmation dialog */
+  #confirmOverlay{position:fixed;inset:0;background:rgba(74,58,38,.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:110;}
+  .confirm-card{background:var(--card);border-radius:16px;padding:24px;max-width:380px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.25);}
+  .confirm-title{margin:0 0 4px;font-size:1.1rem;color:var(--brown-dark);font-family:'Fraunces',serif;}
+  .confirm-sub{margin:0 0 10px;font-size:.82rem;color:var(--brown-mid);font-weight:600;}
+  .confirm-desc{margin:0 0 18px;font-size:.82rem;color:var(--brown-light);line-height:1.5;}
+  .confirm-actions{display:flex;flex-direction:column;gap:8px;}
+  .confirm-actions .btn{width:100%;}
+  .confirm-danger{background:var(--red) !important;}
 
   /* Invoice overlay — styled like an 80mm thermal receipt */
   #invoiceOverlay{position:fixed;inset:0;background:rgba(74,58,38,.45);display:flex;align-items:flex-start;justify-content:center;padding:30px 16px;overflow:auto;z-index:100;}
@@ -229,6 +242,7 @@
       <div class="stat"><div class="label">Total orders</div><div class="value" id="statTotal">0</div></div>
       <div class="stat pending"><div class="label">Pending</div><div class="value" id="statPending">0</div></div>
       <div class="stat delivered"><div class="label">Delivered</div><div class="value" id="statDelivered">0</div></div>
+      <div class="stat cancelled"><div class="label">Cancelled</div><div class="value" id="statCancelled">0</div></div>
       <div class="stat"><div class="label">Total revenue</div><div class="value" id="statRevenue">AED 0</div></div>
     </div>
 
@@ -245,6 +259,7 @@
         <button data-filter="all" class="active">All</button>
         <button data-filter="pending">Pending</button>
         <button data-filter="delivered">Delivered</button>
+        <button data-filter="cancelled">Cancelled</button>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
         <input type="text" id="searchInput" placeholder="Search name, phone, order #">
@@ -257,6 +272,10 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div id="confirmOverlay" class="hidden">
+  <div class="confirm-card" id="confirmCard"></div>
+</div>
 
 <div id="invoiceOverlay" class="hidden">
   <div class="invoice-card" id="invoiceCard">
@@ -427,6 +446,55 @@ async function deleteOrder(id){
   showToast('Order removed.');
   render();
 }
+
+// Cancelling keeps the order record (for your history/CSV) but marks it
+// "cancelled" so it's excluded from pending totals AND from revenue.
+async function cancelOrder(id){
+  const { error } = await sb.from('orders').update({ status: 'cancelled' }).eq('id', id);
+  if(error){ showToast('Could not cancel order: ' + error.message); return; }
+  const o = orders.find(o=>o.id===id);
+  if(o) o.status = 'cancelled';
+  showToast('Order cancelled.');
+  render();
+}
+
+// ---------- Delete / cancel confirmation dialog ----------
+function renderConfirmHtml(o){
+  const alreadyCancelled = o.status === 'cancelled';
+  return `
+    <h3 class="confirm-title">Remove this order?</h3>
+    <p class="confirm-sub">#${escapeHtml(o.id)} — ${escapeHtml(o.name || 'Unnamed')} — AED ${o.total.toFixed(2)}</p>
+    <p class="confirm-desc">
+      ${alreadyCancelled
+        ? 'This order is already cancelled and excluded from revenue. Deleting removes it permanently and cannot be undone.'
+        : 'Cancelling keeps the record (for your history/CSV) but excludes it from pending totals and revenue. Deleting removes it permanently and cannot be undone.'}
+    </p>
+    <div class="confirm-actions">
+      ${!alreadyCancelled ? `<button class="btn btn-ghost" id="confirmCancelBtn">Cancel this order</button>` : ''}
+      <button class="btn confirm-danger" id="confirmDeleteBtn">Delete permanently</button>
+      <button class="btn btn-ghost" id="confirmNevermindBtn">Nevermind</button>
+    </div>`;
+}
+
+function openDeleteConfirm(orderId){
+  const o = orders.find(o => o.id === orderId);
+  if(!o){ showToast('Order not found.'); return; }
+  const card = document.getElementById('confirmCard');
+  card.innerHTML = renderConfirmHtml(o);
+  document.getElementById('confirmOverlay').classList.remove('hidden');
+
+  const cancelBtn = document.getElementById('confirmCancelBtn');
+  if(cancelBtn) cancelBtn.addEventListener('click', async ()=>{ await cancelOrder(orderId); closeConfirm(); });
+
+  document.getElementById('confirmDeleteBtn').addEventListener('click', async ()=>{ await deleteOrder(orderId); closeConfirm(); });
+  document.getElementById('confirmNevermindBtn').addEventListener('click', closeConfirm);
+}
+function closeConfirm(){
+  document.getElementById('confirmOverlay').classList.add('hidden');
+}
+document.getElementById('confirmOverlay').addEventListener('click', (e)=>{
+  if(e.target.id === 'confirmOverlay') closeConfirm();
+});
 
 async function saveEdit(id, patch){
   const { error } = await sb.from('orders').update(patch).eq('id', id);
@@ -655,10 +723,12 @@ function render(){
   const total = orders.length;
   const pending = orders.filter(o=>o.status==='pending').length;
   const delivered = orders.filter(o=>o.status==='delivered').length;
-  const revenue = orders.reduce((s,o)=>s+o.total,0);
+  const cancelled = orders.filter(o=>o.status==='cancelled').length;
+  const revenue = orders.filter(o=>o.status!=='cancelled').reduce((s,o)=>s+o.total,0);
   document.getElementById('statTotal').textContent = total;
   document.getElementById('statPending').textContent = pending;
   document.getElementById('statDelivered').textContent = delivered;
+  document.getElementById('statCancelled').textContent = cancelled;
   document.getElementById('statRevenue').textContent = 'AED ' + revenue.toFixed(0);
 
   renderFlavorPanel();
@@ -681,13 +751,18 @@ function render(){
   let rows = '';
   list.forEach(o=>{
     let leadTimeHtml;
-    if(o.status === 'delivered' && o.deliveredAt){
+    if(o.status === 'cancelled'){
+      leadTimeHtml = `<span class="leadtime cancelled">cancelled</span>`;
+    } else if(o.status === 'delivered' && o.deliveredAt){
       const ms = new Date(o.deliveredAt) - new Date(o.receivedAt);
       leadTimeHtml = `<span class="leadtime delivered">${formatDuration(ms)}</span>`;
     } else {
       const ms = Date.now() - new Date(o.receivedAt);
       leadTimeHtml = `<span class="leadtime pending">waiting ${formatDuration(ms)}</span>`;
     }
+
+    const statusLabel = o.status === 'pending' ? 'Pending' : o.status === 'delivered' ? 'Delivered' : 'Cancelled';
+    const toggleLabel = o.status === 'pending' ? 'Mark Delivered' : 'Mark Pending';
 
     rows += `
       <tr class="order-row" data-id="${escapeHtml(o.id)}">
@@ -696,13 +771,13 @@ function render(){
         <td class="mode-cell">${escapeHtml(o.fulfilment || '—')}</td>
         <td class="right total-cell">AED ${o.total.toFixed(0)}</td>
         <td>${leadTimeHtml}</td>
-        <td><span class="pill ${o.status}">${o.status === 'pending' ? 'Pending' : 'Delivered'}</span></td>
+        <td><span class="pill ${o.status}">${statusLabel}</span></td>
         <td class="right">
           <div class="row-actions">
-            <button class="status-btn ${o.status === 'pending' ? 'to-delivered' : 'to-pending'}" data-toggle="${escapeHtml(o.id)}">${o.status === 'pending' ? 'Mark Delivered' : 'Mark Pending'}</button>
+            <button class="status-btn ${o.status === 'pending' ? 'to-delivered' : 'to-pending'}" data-toggle="${escapeHtml(o.id)}">${toggleLabel}</button>
             <button class="invoice-btn" data-invoice="${escapeHtml(o.id)}">Invoice</button>
             <button class="edit-btn" data-edit="${escapeHtml(o.id)}">Edit</button>
-            <button class="remove-btn" data-remove="${escapeHtml(o.id)}">Remove</button>
+            <button class="remove-btn" data-confirm-delete="${escapeHtml(o.id)}">Remove</button>
           </div>
         </td>
       </tr>`;
@@ -761,8 +836,8 @@ function render(){
   area.querySelectorAll('[data-toggle]').forEach(btn=>{
     btn.addEventListener('click', (e)=>{ e.stopPropagation(); toggleStatus(btn.dataset.toggle); });
   });
-  area.querySelectorAll('[data-remove]').forEach(btn=>{
-    btn.addEventListener('click', (e)=>{ e.stopPropagation(); deleteOrder(btn.dataset.remove); });
+  area.querySelectorAll('[data-confirm-delete]').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{ e.stopPropagation(); openDeleteConfirm(btn.dataset.confirmDelete); });
   });
   area.querySelectorAll('[data-invoice]').forEach(btn=>{
     btn.addEventListener('click', (e)=>{ e.stopPropagation(); openInvoice(btn.dataset.invoice); });

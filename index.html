@@ -79,6 +79,8 @@
   .remove-btn:hover{background:#FBEAE4;}
   .edit-btn{border:none;color:var(--blue);}
   .edit-btn:hover{background:var(--blue-bg);}
+  .invoice-btn{border:1px solid var(--border2);color:var(--brown-mid);}
+  .invoice-btn:hover{background:#F1E6D2;}
   .status-btn{border:1px solid transparent;font-weight:600;}
   .status-btn.to-delivered{border-color:var(--delivered-fg);color:var(--delivered-fg);}
   .status-btn.to-delivered:hover{background:var(--delivered-bg);}
@@ -98,6 +100,8 @@
   .fulfill-btn{width:26px;height:26px;border-radius:8px;border:1px solid var(--border2);background:var(--card);color:var(--brown-dark);font-size:.9rem;font-weight:700;cursor:pointer;line-height:1;}
   .fulfill-btn:hover:not(:disabled){background:var(--pending-bg);border-color:var(--accent);}
   .fulfill-btn:disabled{opacity:.35;cursor:not-allowed;}
+  .delivery-charge-row{display:flex;gap:6px;align-items:center;margin-top:3px;}
+  .delivery-charge-row input{width:100px;}
   ul.items-list{margin:4px 0 0;padding-left:18px;}
   ul.flavors{margin:2px 0 0;padding-left:16px;font-size:.75rem;color:var(--brown-light);}
   .empty{text-align:center;padding:60px 20px;border:1px dashed var(--border2);border-radius:16px;color:var(--brown-light);background:var(--card);}
@@ -132,6 +136,46 @@
   .login-error{color:var(--red);font-size:.8rem;margin-bottom:10px;min-height:1em;}
   .config-warning{background:#FBEAE4;border:1px solid #EFC9BC;color:#8A3B24;padding:14px 16px;border-radius:12px;font-size:.82rem;max-width:480px;margin:60px auto;line-height:1.5;}
   .config-warning code{background:#FFF3EE;padding:1px 5px;border-radius:4px;}
+
+  /* Invoice overlay — styled like an 80mm thermal receipt */
+  #invoiceOverlay{position:fixed;inset:0;background:rgba(74,58,38,.45);display:flex;align-items:flex-start;justify-content:center;padding:30px 16px;overflow:auto;z-index:100;}
+  .invoice-card{
+    background:#fff;color:#222;width:80mm;max-width:100%;padding:5mm 4mm;
+    box-shadow:0 10px 40px rgba(0,0,0,.25);
+    font-family:ui-monospace,SFMono-Regular,'Courier New',Menlo,monospace;
+    font-size:11px;line-height:1.45;
+  }
+  .invoice-center{text-align:center;}
+  .invoice-brand h2{margin:0;font-family:inherit;font-weight:700;letter-spacing:.03em;font-size:14px;text-transform:uppercase;}
+  .invoice-brand p{margin:2px 0 0;font-size:9.5px;color:#555;}
+  .invoice-meta{margin-top:6px;font-size:10px;color:#333;}
+  .invoice-divider{border:none;border-top:1px dashed #999;margin:8px 0;}
+  .invoice-section{margin-bottom:8px;}
+  .invoice-section h4{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#777;margin:0 0 3px;font-weight:700;}
+  .invoice-section p{margin:0;font-size:10.5px;line-height:1.5;}
+  .invoice-items{margin-bottom:2px;}
+  .invoice-item{margin-bottom:6px;}
+  .invoice-item-name{display:flex;justify-content:space-between;gap:6px;font-weight:700;}
+  .invoice-item-line{display:flex;justify-content:space-between;gap:6px;color:#444;font-size:10px;}
+  .invoice-item-flavors{margin:2px 0 0;padding-left:10px;font-size:9.5px;color:#666;list-style:none;}
+  .invoice-item-flavors li{display:flex;justify-content:space-between;gap:6px;}
+  .invoice-item-flavors li::before{content:"- ";}
+  .invoice-totals{margin-top:6px;}
+  .invoice-total-line{display:flex;justify-content:space-between;font-size:10.5px;padding:1px 0;}
+  .invoice-total-line.grand{font-weight:700;font-size:12px;border-top:1px dashed #999;margin-top:4px;padding-top:5px;}
+  .invoice-actions{display:flex;justify-content:center;gap:8px;margin-top:16px;}
+  .invoice-actions .btn{font-size:.78rem;padding:8px 14px;}
+  .invoice-footer{margin-top:14px;font-size:9.5px;color:#666;text-align:center;}
+
+  @media print{
+    @page{ size: 80mm auto; margin: 0; }
+    body{ margin:0; }
+    body *{visibility:hidden;}
+    #invoiceOverlay, #invoiceOverlay *{visibility:visible;}
+    #invoiceOverlay{position:absolute;inset:0;background:#fff;padding:0;display:block;}
+    .invoice-actions{display:none !important;}
+    .invoice-card{box-shadow:none;width:80mm;margin:0;padding:3mm 3mm;}
+  }
 </style>
 </head>
 <body>
@@ -214,6 +258,12 @@
 
 <div class="toast" id="toast"></div>
 
+<div id="invoiceOverlay" class="hidden">
+  <div class="invoice-card" id="invoiceCard">
+    <!-- filled dynamically by renderInvoiceHtml() -->
+  </div>
+</div>
+
 <script>
 /* =====================================================================
    1) FILL THESE IN — from your Supabase project → Connect (or Settings → API Keys)
@@ -249,7 +299,8 @@ function toRow(o){
     pref_date: o.prefDate, pref_time: o.prefTime, notes: o.notes,
     items: o.items, status: o.status, received_at: o.receivedAt,
     delivered_at: o.deliveredAt || null,
-    fulfilled_flavors: o.fulfilledFlavors || {}
+    fulfilled_flavors: o.fulfilledFlavors || {},
+    delivery_charge: o.deliveryCharge || 0
   };
 }
 function fromRow(r){
@@ -259,7 +310,8 @@ function fromRow(r){
     prefDate: r.pref_date || '', prefTime: r.pref_time || '', notes: r.notes || '',
     items: r.items || [], status: r.status || 'pending', receivedAt: r.received_at,
     deliveredAt: r.delivered_at || null,
-    fulfilledFlavors: r.fulfilled_flavors || {}
+    fulfilledFlavors: r.fulfilled_flavors || {},
+    deliveryCharge: r.delivery_charge || 0
   };
 }
 
@@ -402,6 +454,22 @@ async function setFlavorFulfilled(orderId, flavorName, newQty){
   render();
 }
 
+// Sum of (qty x price) across an order's items, ignoring any manually-set
+// delivery charge — used as the invoice's "Subtotal" line.
+function itemsSubtotal(o){
+  return (o.items || []).reduce((sum, it) => sum + (it.qty || 0) * (it.price || 0), 0);
+}
+
+async function saveDeliveryCharge(orderId, amount){
+  const charge = Math.max(0, parseFloat(amount) || 0);
+  const { error } = await sb.from('orders').update({ delivery_charge: charge }).eq('id', orderId);
+  if(error){ showToast('Could not save delivery charge: ' + error.message); return; }
+  const o = orders.find(o => o.id === orderId);
+  if(o) o.deliveryCharge = charge;
+  showToast('Delivery charge saved.');
+  render();
+}
+
 function toggleExpand(id){
   if(editingId === id) return; // don't collapse while editing
   expandedId = expandedId === id ? null : id;
@@ -443,6 +511,7 @@ function renderEditForm(o){
         <div><label>Preferred date</label><input class="ef-prefdate" value="${escapeHtml(o.prefDate)}"></div>
         <div><label>Preferred time</label><input class="ef-preftime" value="${escapeHtml(o.prefTime)}"></div>
         <div><label>Total (AED)</label><input class="ef-total" type="number" min="0" value="${o.total}"></div>
+        <div><label>Delivery charge (AED)</label><input class="ef-delivery" type="number" min="0" step="0.01" value="${o.deliveryCharge || 0}"></div>
         <div class="full"><label>Notes</label><input class="ef-notes" value="${escapeHtml(o.notes)}"></div>
       </div>
       <div class="edit-items">
@@ -631,6 +700,7 @@ function render(){
         <td class="right">
           <div class="row-actions">
             <button class="status-btn ${o.status === 'pending' ? 'to-delivered' : 'to-pending'}" data-toggle="${escapeHtml(o.id)}">${o.status === 'pending' ? 'Mark Delivered' : 'Mark Pending'}</button>
+            <button class="invoice-btn" data-invoice="${escapeHtml(o.id)}">Invoice</button>
             <button class="edit-btn" data-edit="${escapeHtml(o.id)}">Edit</button>
             <button class="remove-btn" data-remove="${escapeHtml(o.id)}">Remove</button>
           </div>
@@ -660,6 +730,13 @@ function render(){
                   ${o.prefDate ? `<div class="field"><b>Preferred date:</b> ${escapeHtml(o.prefDate)}</div>` : ''}
                   ${o.prefTime ? `<div class="field"><b>Preferred time:</b> ${escapeHtml(o.prefTime)}</div>` : ''}
                   ${o.notes ? `<div class="field"><b>Notes:</b> ${escapeHtml(o.notes)}</div>` : ''}
+                  <div class="field delivery-charge-field" data-order="${escapeHtml(o.id)}">
+                    <b>Delivery charge (AED)</b>
+                    <div class="delivery-charge-row">
+                      <input type="number" min="0" step="0.01" class="delivery-charge-input" value="${o.deliveryCharge || 0}">
+                      <button type="button" class="btn btn-ghost small delivery-charge-save">Save</button>
+                    </div>
+                  </div>
                   <div class="field"><b>Received:</b> ${new Date(o.receivedAt).toLocaleString()}</div>
                   ${o.deliveredAt ? `<div class="field"><b>Delivered:</b> ${new Date(o.deliveredAt).toLocaleString()}</div>` : ''}
                 </div>
@@ -686,6 +763,19 @@ function render(){
   });
   area.querySelectorAll('[data-remove]').forEach(btn=>{
     btn.addEventListener('click', (e)=>{ e.stopPropagation(); deleteOrder(btn.dataset.remove); });
+  });
+  area.querySelectorAll('[data-invoice]').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{ e.stopPropagation(); openInvoice(btn.dataset.invoice); });
+  });
+  area.querySelectorAll('.delivery-charge-field').forEach(field=>{
+    const orderId = field.dataset.order;
+    const input = field.querySelector('.delivery-charge-input');
+    const saveBtn = field.querySelector('.delivery-charge-save');
+    input.addEventListener('click', (e)=> e.stopPropagation());
+    saveBtn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      saveDeliveryCharge(orderId, input.value);
+    });
   });
   area.querySelectorAll('[data-edit]').forEach(btn=>{
     btn.addEventListener('click', (e)=>{
@@ -730,6 +820,7 @@ function render(){
         pref_time: editForm.querySelector('.ef-preftime').value.trim(),
         notes: editForm.querySelector('.ef-notes').value.trim(),
         total: parseFloat(editForm.querySelector('.ef-total').value) || 0,
+        delivery_charge: Math.max(0, parseFloat(editForm.querySelector('.ef-delivery').value) || 0),
         items
       };
       const ok = await saveEdit(id, patch);
@@ -761,6 +852,100 @@ function wireItemRemove(row){
   const btn = row.querySelector('.ef-remove-item');
   btn.addEventListener('click', ()=>{ row.remove(); });
 }
+
+// ---------- Invoice ----------
+function invoiceNumberFor(o){
+  return o.id; // order IDs already look like invoice numbers (e.g. ABrdy-1234)
+}
+
+function renderInvoiceHtml(o){
+  const itemsHtml = o.items.map(it => {
+    const lineTotal = (it.qty || 0) * (it.price || 0);
+    const flavorsHtml = it.flavors && it.flavors.length
+      ? `<ul class="invoice-item-flavors">${it.flavors.map(f=>`<li>${escapeHtml(f)}</li>`).join('')}</ul>`
+      : '';
+    return `
+      <div class="invoice-item">
+        <div class="invoice-item-name"><span>${escapeHtml(it.name)}</span></div>
+        <div class="invoice-item-line">
+          <span>${it.qty} x AED ${(it.price||0).toFixed(2)}</span>
+          <span>AED ${lineTotal.toFixed(2)}</span>
+        </div>
+        ${flavorsHtml}
+      </div>`;
+  }).join('');
+
+  const subtotal = itemsSubtotal(o);
+  const delivery = o.deliveryCharge || 0;
+  const grandTotal = subtotal + delivery;
+
+  const addressLine = o.fulfilment === 'delivery'
+    ? [o.address, o.area].filter(Boolean).join(', ')
+    : '';
+
+  return `
+    <div class="invoice-center">
+      <div class="invoice-brand">
+        <h2>Always Bready</h2>
+        <p>Home-baked Filipino pandesal &amp; bread<br>Discovery Gardens, Dubai</p>
+      </div>
+      <div class="invoice-meta">
+        Invoice #${escapeHtml(invoiceNumberFor(o))}<br>
+        ${new Date(o.receivedAt).toLocaleDateString()} ${new Date(o.receivedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+      </div>
+    </div>
+
+    <hr class="invoice-divider">
+
+    <div class="invoice-section">
+      <h4>Billed to</h4>
+      <p>${escapeHtml(o.name || '—')}${o.phone ? ` &middot; ${escapeHtml(o.phone)}` : ''}</p>
+    </div>
+    <div class="invoice-section">
+      <h4>Fulfilment</h4>
+      <p style="text-transform:capitalize">${escapeHtml(o.fulfilment || '—')}</p>
+      ${addressLine ? `<p>${escapeHtml(addressLine)}</p>` : ''}
+      ${o.prefDate || o.prefTime ? `<p>${escapeHtml([o.prefDate, o.prefTime].filter(Boolean).join(' · '))}</p>` : ''}
+    </div>
+
+    <hr class="invoice-divider">
+
+    <div class="invoice-items">
+      ${itemsHtml}
+    </div>
+
+    <div class="invoice-totals">
+      <div class="invoice-total-line"><span>Subtotal</span><span>AED ${subtotal.toFixed(2)}</span></div>
+      <div class="invoice-total-line"><span>Delivery charge</span><span>AED ${delivery.toFixed(2)}</span></div>
+      <div class="invoice-total-line grand"><span>TOTAL</span><span>AED ${grandTotal.toFixed(2)}</span></div>
+    </div>
+
+    ${o.notes ? `<hr class="invoice-divider"><div class="invoice-section"><h4>Notes</h4><p>${escapeHtml(o.notes)}</p></div>` : ''}
+
+    <hr class="invoice-divider">
+    <div class="invoice-footer">Salamat sa pag-order! 🍞<br>Always Bready</div>
+
+    <div class="invoice-actions">
+      <button class="btn btn-ghost" id="invoiceCloseBtn">Close</button>
+      <button class="btn btn-dark" id="invoicePrintBtn">Print / Save as PDF</button>
+    </div>`;
+}
+
+function openInvoice(orderId){
+  const o = orders.find(o => o.id === orderId);
+  if(!o){ showToast('Order not found.'); return; }
+  const card = document.getElementById('invoiceCard');
+  card.innerHTML = renderInvoiceHtml(o);
+  document.getElementById('invoiceOverlay').classList.remove('hidden');
+  document.getElementById('invoiceCloseBtn').addEventListener('click', closeInvoice);
+  document.getElementById('invoicePrintBtn').addEventListener('click', ()=> window.print());
+}
+function closeInvoice(){
+  document.getElementById('invoiceOverlay').classList.add('hidden');
+}
+document.getElementById('invoiceOverlay').addEventListener('click', (e)=>{
+  if(e.target.id === 'invoiceOverlay') closeInvoice();
+});
 
 // ---------- CSV export ----------
 function csvEscape(val){

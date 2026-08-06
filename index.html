@@ -453,6 +453,32 @@ async function fetchOrders(){
   if(error){ showToast('Could not load orders: ' + error.message); return; }
   orders = (data || []).map(fromRow);
   render();
+  syncPendingQtyToInventory();
+}
+
+// Writes each flavor's current Pending total into inventory.pending_qty, so
+// the ordering website can subtract "already claimed by other customers"
+// from its own estimate — not just what's in the current shopper's cart.
+// Only changed values are sent, and existing "quantity" (Est. inventory)
+// values are left untouched since they're omitted from the upsert payload.
+let lastSyncedPendingQty = {};
+async function syncPendingQtyToInventory(){
+  const rows = computeInventoryRows();
+  const changed = rows.filter(r => lastSyncedPendingQty[r.name] !== r.pendingQty);
+  if(changed.length === 0) return;
+
+  const payload = changed.map(r => ({
+    flavor: r.name,
+    pending_qty: r.pendingQty,
+    updated_at: new Date().toISOString()
+  }));
+  const { error } = await sb.from('inventory').upsert(payload, { onConflict: 'flavor' });
+  if(error){
+    // Most likely cause: the pending_qty column hasn't been added yet.
+    console.error('Could not sync pending_qty to inventory:', error.message);
+    return;
+  }
+  changed.forEach(r => { lastSyncedPendingQty[r.name] = r.pendingQty; });
 }
 
 async function fetchInventory(){

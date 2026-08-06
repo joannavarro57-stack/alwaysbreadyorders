@@ -51,6 +51,23 @@
   .flavor-chip .count{background:var(--accent-dark);color:#fff;border-radius:999px;min-width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:.72rem;padding:0 6px;}
   .flavor-empty{font-size:.85rem;color:var(--brown-light);}
 
+  .inventory-panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:24px;}
+  .inventory-hint{font-size:.78rem;color:var(--brown-light);margin:0 0 14px;line-height:1.5;}
+  .inventory-table{width:100%;border-collapse:collapse;font-size:.85rem;}
+  .inventory-table th{text-align:left;padding:8px 6px;font-size:.72rem;color:var(--brown-mid);text-transform:uppercase;letter-spacing:.03em;border-bottom:2px solid var(--border2);}
+  .inventory-table th.right, .inventory-table td.right{text-align:right;}
+  .inventory-table td{padding:9px 6px;border-bottom:1px solid var(--border);vertical-align:middle;}
+  .inventory-flavor-name{font-weight:600;color:var(--text);}
+  .inventory-stock-cell{display:flex;align-items:center;justify-content:flex-end;gap:6px;}
+  .inventory-stock-input{width:72px;text-align:right;}
+  .inventory-save-btn{padding:6px 10px;font-size:.72rem;}
+  .to-produce-value{font-weight:700;}
+  .to-produce-value.needed{color:var(--accent-dark);}
+  .to-produce-value.covered{color:var(--delivered-fg);}
+  .inventory-empty{text-align:center;padding:30px 20px;color:var(--brown-light);font-size:.85rem;}
+  .inventory-add-row{display:flex;gap:8px;margin-top:14px;padding-top:14px;border-top:1px dashed var(--border2);}
+  .inventory-add-row input{flex:1;}
+
   .toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;}
   .tabs{display:flex;gap:4px;background:#F1E6D2;border-radius:10px;padding:4px;}
   .tabs button{border:none;background:transparent;padding:7px 14px;border-radius:8px;font-size:.78rem;font-weight:600;color:var(--brown-light);cursor:pointer;text-transform:capitalize;}
@@ -254,6 +271,15 @@
       <div class="flavor-grid" id="flavorGrid"></div>
     </div>
 
+    <div class="inventory-panel">
+      <div class="flavor-panel-head">
+        <h2>Inventory &amp; production plan</h2>
+        <span class="sub" id="inventorySub"></span>
+      </div>
+      <p class="inventory-hint">In stock is entered manually here and syncs live to the ordering website, where customers see it as an estimate. To produce = Pending − In stock (never below 0).</p>
+      <div id="inventoryTableArea"></div>
+    </div>
+
     <div class="toolbar">
       <div class="tabs" id="tabs">
         <button data-filter="all" class="active">All</button>
@@ -301,6 +327,25 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 /* How often to auto-refresh orders from the backend, in milliseconds. */
 const AUTO_REFRESH_MS = 60000;
 
+/* Every flavor/product name from the ordering website's menu (products +
+   Build Your Own Box items), so the Inventory panel lists all of them even
+   before any order comes in. If you add, rename, or remove a flavor on the
+   ordering site (index_2.html), update this list to match — otherwise a
+   brand-new flavor just won't show here until it either gets a pending
+   order or you add it with the "+ Add flavor" box below the table. */
+const ALL_CATALOG_FLAVORS = [
+  'Plain Pandesal',
+  'Pandesal con Cheeese',
+  'Pandesal con Corned Beef',
+  'Pandesal con Shanghai Filling',
+  'Pandesal con Chicken Skinless Longaniza',
+  'Cheese Bready',
+  'Pandesal (8 PCS)',
+  'Pandesal with Cheese',
+  'Pastillas Bread',
+  'Coco Jam and Roll *NEW*',
+];
+
 let orders = [];
 let filter = 'all';
 let query = '';
@@ -309,6 +354,12 @@ let editingId = null;
 let channel = null;
 let tickTimer = null;
 let refreshTimer = null;
+
+// flavor name -> stock quantity, loaded from the shared "inventory" Supabase table
+let inventory = {};
+// flavor name currently focused in an "In stock" input — skip clobbering it on refresh
+let inventoryFocusedFlavor = null;
+let inventoryChannel = null;
 
 // ---------- Row <-> App object mapping ----------
 function toRow(o){
@@ -400,6 +451,29 @@ async function fetchOrders(){
   if(error){ showToast('Could not load orders: ' + error.message); return; }
   orders = (data || []).map(fromRow);
   render();
+}
+
+async function fetchInventory(){
+  const { data, error } = await sb.from('inventory').select('*');
+  if(error){
+    // Table probably doesn't exist yet — fail quietly, panel just shows 0 in stock everywhere.
+    console.error('Could not load inventory:', error.message);
+    return;
+  }
+  const next = {};
+  (data || []).forEach(row => { next[row.flavor] = row.quantity || 0; });
+  inventory = next;
+  renderInventoryPanel();
+}
+
+async function saveInventoryQty(flavor, qty){
+  const quantity = Math.max(0, parseFloat(qty) || 0);
+  const { error } = await sb.from('inventory')
+    .upsert({ flavor, quantity, updated_at: new Date().toISOString() }, { onConflict: 'flavor' });
+  if(error){ showToast('Could not save inventory: ' + error.message); return; }
+  inventory[flavor] = quantity;
+  showToast(`${flavor}: stock set to ${quantity}.`);
+  renderInventoryPanel();
 }
 
 async function handleParse(){
@@ -719,6 +793,103 @@ function renderFlavorPanel(){
     </div>`).join('');
 }
 
+// ---------- Inventory & production plan ----------
+// Combines pending-flavor totals (from computeFlavorCounts, already accounts
+// for confirmed/fulfilled quantities) with the manually-entered "in stock"
+// numbers, so every flavor that's either pending OR tracked in inventory
+// shows up — even if one side is currently zero.
+function computeInventoryRows(){
+  const pending = new Map(computeFlavorCounts());
+  const names = new Set([...ALL_CATALOG_FLAVORS, ...pending.keys(), ...Object.keys(inventory)]);
+  const rows = [...names].map(name => {
+    const pendingQty = pending.get(name) || 0;
+    const stockQty = inventory[name] || 0;
+    const toProduce = Math.max(0, pendingQty - stockQty);
+    return { name, pendingQty, stockQty, toProduce };
+  });
+  // Most urgent (highest "to produce") first, then by pending qty, then alphabetical
+  rows.sort((a,b) => b.toProduce - a.toProduce || b.pendingQty - a.pendingQty || a.name.localeCompare(b.name));
+  return rows;
+}
+
+function renderInventoryPanel(){
+  if(inventoryFocusedFlavor) return; // don't clobber an in-progress edit
+
+  const sub = document.getElementById('inventorySub');
+  const area = document.getElementById('inventoryTableArea');
+  const rows = computeInventoryRows();
+
+  const totalToProduce = rows.reduce((s,r) => s + r.toProduce, 0);
+  sub.textContent = totalToProduce ? `${totalToProduce} pieces to produce` : 'All pending orders covered by stock';
+
+  if(rows.length === 0){
+    area.innerHTML = `
+      <div class="inventory-empty">No flavors tracked yet. Add one below to get started.</div>
+      <div class="inventory-add-row">
+        <input type="text" id="inventoryAddName" placeholder="New flavor name (must match the ordering site exactly)">
+        <button type="button" class="btn btn-ghost small" id="inventoryAddBtn">+ Add flavor</button>
+      </div>`;
+    const addNameInput = document.getElementById('inventoryAddName');
+    const addBtn = document.getElementById('inventoryAddBtn');
+    addBtn.addEventListener('click', ()=>{
+      const name = addNameInput.value.trim();
+      if(!name){ showToast('Enter a flavor name first.'); return; }
+      saveInventoryQty(name, 0);
+    });
+    addNameInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') addBtn.click(); });
+    return;
+  }
+
+  area.innerHTML = `
+    <div class="table-wrap">
+      <table class="inventory-table">
+        <thead>
+          <tr><th>Flavor</th><th class="right">Pending</th><th class="right">In stock</th><th class="right">To produce</th></tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr data-flavor="${escapeHtml(r.name)}">
+              <td class="inventory-flavor-name">${escapeHtml(r.name)}</td>
+              <td class="right">${r.pendingQty}</td>
+              <td class="right">
+                <div class="inventory-stock-cell">
+                  <input type="number" min="0" step="1" class="inventory-stock-input" value="${r.stockQty}">
+                  <button type="button" class="btn btn-ghost small inventory-save-btn">Save</button>
+                </div>
+              </td>
+              <td class="right">
+                <span class="to-produce-value ${r.toProduce > 0 ? 'needed' : 'covered'}">${r.toProduce}</span>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="inventory-add-row">
+      <input type="text" id="inventoryAddName" placeholder="New flavor name (must match the ordering site exactly)">
+      <button type="button" class="btn btn-ghost small" id="inventoryAddBtn">+ Add flavor</button>
+    </div>`;
+
+  area.querySelectorAll('tr[data-flavor]').forEach(row => {
+    const flavor = row.dataset.flavor;
+    const input = row.querySelector('.inventory-stock-input');
+    const saveBtn = row.querySelector('.inventory-save-btn');
+    input.addEventListener('focus', ()=>{ inventoryFocusedFlavor = flavor; });
+    input.addEventListener('blur', ()=>{ if(inventoryFocusedFlavor === flavor) inventoryFocusedFlavor = null; });
+    saveBtn.addEventListener('click', ()=>{ saveInventoryQty(flavor, input.value); });
+  });
+
+  const addNameInput = document.getElementById('inventoryAddName');
+  const addBtn = document.getElementById('inventoryAddBtn');
+  addBtn.addEventListener('click', ()=>{
+    const name = addNameInput.value.trim();
+    if(!name){ showToast('Enter a flavor name first.'); return; }
+    saveInventoryQty(name, 0);
+  });
+  addNameInput.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter') addBtn.click();
+  });
+}
+
 function render(){
   const total = orders.length;
   const pending = orders.filter(o=>o.status==='pending').length;
@@ -732,6 +903,7 @@ function render(){
   document.getElementById('statRevenue').textContent = 'AED ' + revenue.toFixed(0);
 
   renderFlavorPanel();
+  renderInventoryPanel();
 
   let list = orders;
   if(filter !== 'all') list = list.filter(o=>o.status===filter);
@@ -1096,12 +1268,23 @@ function subscribeRealtime(){
     });
 }
 
+function subscribeInventoryRealtime(){
+  if(inventoryChannel) sb.removeChannel(inventoryChannel);
+  inventoryChannel = sb.channel('inventory-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => {
+      if(!inventoryFocusedFlavor) fetchInventory();
+    })
+    .subscribe();
+}
+
 // ---------- Auth ----------
 async function showApp(){
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   await fetchOrders();
+  await fetchInventory();
   subscribeRealtime();
+  subscribeInventoryRealtime();
 
   // Recompute the "waiting Xh" clocks every minute.
   if(tickTimer) clearInterval(tickTimer);
@@ -1111,7 +1294,10 @@ async function showApp(){
   // top of the realtime subscription above, in case realtime drops or someone
   // else's browser session missed an event.
   if(refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = setInterval(()=>{ if(!editingId) fetchOrders(); }, AUTO_REFRESH_MS);
+  refreshTimer = setInterval(()=>{
+    if(!editingId) fetchOrders();
+    if(!inventoryFocusedFlavor) fetchInventory();
+  }, AUTO_REFRESH_MS);
 }
 function showLogin(){
   document.getElementById('app').classList.add('hidden');
@@ -1140,6 +1326,7 @@ document.getElementById('loginBtn').addEventListener('click', async ()=>{
 });
 document.getElementById('logoutBtn').addEventListener('click', async ()=>{
   if(channel) sb.removeChannel(channel);
+  if(inventoryChannel) sb.removeChannel(inventoryChannel);
   await sb.auth.signOut();
 });
 

@@ -64,6 +64,8 @@
   .to-produce-value{font-weight:700;}
   .to-produce-value.needed{color:var(--accent-dark);}
   .to-produce-value.covered{color:var(--delivered-fg);}
+  .remaining-value{font-weight:700;color:var(--brown-light);}
+  .remaining-value.surplus{color:var(--delivered-fg);}
   .inventory-empty{text-align:center;padding:30px 20px;color:var(--brown-light);font-size:.85rem;}
   .inventory-add-row{display:flex;gap:8px;margin-top:14px;padding-top:14px;border-top:1px dashed var(--border2);}
   .inventory-add-row input{flex:1;}
@@ -276,7 +278,7 @@
         <h2>Inventory &amp; production plan</h2>
         <span class="sub" id="inventorySub"></span>
       </div>
-      <p class="inventory-hint">In stock is entered manually here and syncs live to the ordering website, where customers see it as an estimate. To produce = Pending − In stock (never below 0).</p>
+      <p class="inventory-hint">Est. inventory is entered manually here and syncs live to the ordering website, where customers see it as "Est. N left today". Remaining = Est. inventory − Pending (surplus after covering pending orders). To produce = Pending − Est. inventory (never below 0).</p>
       <div id="inventoryTableArea"></div>
     </div>
 
@@ -472,7 +474,7 @@ async function saveInventoryQty(flavor, qty){
     .upsert({ flavor, quantity, updated_at: new Date().toISOString() }, { onConflict: 'flavor' });
   if(error){ showToast('Could not save inventory: ' + error.message); return; }
   inventory[flavor] = quantity;
-  showToast(`${flavor}: stock set to ${quantity}.`);
+  showToast(`${flavor}: est. inventory set to ${quantity}.`);
   renderInventoryPanel();
 }
 
@@ -805,7 +807,8 @@ function computeInventoryRows(){
     const pendingQty = pending.get(name) || 0;
     const stockQty = inventory[name] || 0;
     const toProduce = Math.max(0, pendingQty - stockQty);
-    return { name, pendingQty, stockQty, toProduce };
+    const remaining = Math.max(0, stockQty - pendingQty); // stock left over after covering pending
+    return { name, pendingQty, stockQty, toProduce, remaining };
   });
   // Most urgent (highest "to produce") first, then by pending qty, then alphabetical
   rows.sort((a,b) => b.toProduce - a.toProduce || b.pendingQty - a.pendingQty || a.name.localeCompare(b.name));
@@ -844,7 +847,7 @@ function renderInventoryPanel(){
     <div class="table-wrap">
       <table class="inventory-table">
         <thead>
-          <tr><th>Flavor</th><th class="right">Pending</th><th class="right">In stock</th><th class="right">To produce</th></tr>
+          <tr><th>Flavor</th><th class="right">Pending</th><th class="right">Est. inventory</th><th class="right">Remaining</th><th class="right">To produce</th></tr>
         </thead>
         <tbody>
           ${rows.map(r => `
@@ -856,6 +859,9 @@ function renderInventoryPanel(){
                   <input type="number" min="0" step="1" class="inventory-stock-input" value="${r.stockQty}">
                   <button type="button" class="btn btn-ghost small inventory-save-btn">Save</button>
                 </div>
+              </td>
+              <td class="right">
+                <span class="remaining-value ${r.remaining > 0 ? 'surplus' : ''}">${r.remaining}</span>
               </td>
               <td class="right">
                 <span class="to-produce-value ${r.toProduce > 0 ? 'needed' : 'covered'}">${r.toProduce}</span>

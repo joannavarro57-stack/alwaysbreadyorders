@@ -69,6 +69,10 @@
   .inventory-empty{text-align:center;padding:30px 20px;color:var(--brown-light);font-size:.85rem;}
   .inventory-add-row{display:flex;gap:8px;margin-top:14px;padding-top:14px;border-top:1px dashed var(--border2);}
   .inventory-add-row input{flex:1;}
+  .inventory-remove-btn{font-size:.8rem;padding:4px 8px;}
+  .inventory-hidden-toggle{margin-top:12px;}
+  .hidden-flavor-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 2px;font-size:.82rem;color:var(--brown-mid);border-bottom:1px solid var(--border);}
+  .hidden-flavor-row:last-child{border-bottom:none;}
 
   .toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;}
   .tabs{display:flex;gap:4px;background:#F1E6D2;border-radius:10px;padding:4px;}
@@ -273,15 +277,6 @@
       <div class="flavor-grid" id="flavorGrid"></div>
     </div>
 
-    <div class="inventory-panel">
-      <div class="flavor-panel-head">
-        <h2>Inventory &amp; production plan</h2>
-        <span class="sub" id="inventorySub"></span>
-      </div>
-      <p class="inventory-hint">Est. inventory is entered manually here and syncs live to the ordering website, where customers see it as "Est. N left today". Remaining = Est. inventory − Pending (surplus after covering pending orders). To produce = Pending − Est. inventory (never below 0).</p>
-      <div id="inventoryTableArea"></div>
-    </div>
-
     <div class="toolbar">
       <div class="tabs" id="tabs">
         <button data-filter="all" class="active">All</button>
@@ -296,6 +291,15 @@
     </div>
 
     <div id="tableArea"></div>
+
+    <div class="inventory-panel">
+      <div class="flavor-panel-head">
+        <h2>Inventory &amp; production plan</h2>
+        <span class="sub" id="inventorySub"></span>
+      </div>
+      <p class="inventory-hint">Est. inventory is entered manually here and syncs live to the ordering website, where customers see it as "Est. N left today". Remaining = Est. inventory − Pending (surplus after covering pending orders). To produce = Pending − Est. inventory (never below 0).</p>
+      <div id="inventoryTableArea"></div>
+    </div>
   </div>
 </div>
 
@@ -362,6 +366,10 @@ let inventory = {};
 // flavor name currently focused in an "In stock" input — skip clobbering it on refresh
 let inventoryFocusedFlavor = null;
 let inventoryChannel = null;
+// flavor names removed from the inventory panel (synced via inventory.hidden column).
+// Auto-reappears if a new pending order comes in for it — see computeInventoryRows().
+let hiddenFlavors = new Set();
+let inventoryHiddenListOpen = false;
 
 // ---------- Row <-> App object mapping ----------
 function toRow(o){
@@ -489,9 +497,61 @@ async function fetchInventory(){
     return;
   }
   const next = {};
-  (data || []).forEach(row => { next[row.flavor] = row.quantity || 0; });
+  const nextHidden = new Set();
+  (data || []).forEach(row => {
+    next[row.flavor] = row.quantity || 0;
+    if(row.hidden) nextHidden.add(row.flavor);
+  });
   inventory = next;
+  hiddenFlavors = nextHidden;
   renderInventoryPanel();
+}
+
+// Hides a flavor from the inventory panel across every device (persisted via
+// the inventory.hidden column). Refuses if it still has pending orders, so a
+// discontinued flavor can't accidentally swallow real, unfulfilled demand.
+// Requires a one-time schema change — see the SKILL/setup notes for the SQL.
+async function hideFlavor(flavorName){
+  const rows = computeInventoryRows();
+  const r = rows.find(r => r.name === flavorName);
+  if(r && r.pendingQty > 0){
+    showToast(`Can't remove "${flavorName}" — it still has ${r.pendingQty} pending order${r.pendingQty!==1?'s':''}.`);
+    return;
+  }
+  const { error } = await sb.from('inventory')
+    .upsert({ flavor: flavorName, hidden: true, updated_at: new Date().toISOString() }, { onConflict: 'flavor' });
+  if(error){
+    showToast('Could not remove flavor — see console.');
+    console.error('Could not hide flavor. Have you added the "hidden" column to the inventory table? Error:', error.message);
+    return;
+  }
+  hiddenFlavors.add(flavorName);
+  showToast(`"${flavorName}" removed from the inventory panel.`);
+  renderInventoryPanel();
+}
+
+async function restoreFlavor(flavorName){
+  const { error } = await sb.from('inventory')
+    .upsert({ flavor: flavorName, hidden: false, updated_at: new Date().toISOString() }, { onConflict: 'flavor' });
+  if(error){ showToast('Could not restore flavor: ' + error.message); return; }
+  hiddenFlavors.delete(flavorName);
+  showToast(`"${flavorName}" restored.`);
+  renderInventoryPanel();
+}
+
+function openDeleteFlavorConfirm(flavorName){
+  const card = document.getElementById('confirmCard');
+  card.innerHTML = `
+    <h3 class="confirm-title">Remove this flavor?</h3>
+    <p class="confirm-sub">${escapeHtml(flavorName)}</p>
+    <p class="confirm-desc">This hides it from the inventory panel on every device — the ordering site isn't affected. It comes back automatically if a new order comes in for it, or you can bring it back anytime from "Show removed flavors" below the table.</p>
+    <div class="confirm-actions">
+      <button class="btn confirm-danger" id="confirmDeleteFlavorBtn">Remove flavor</button>
+      <button class="btn btn-ghost" id="confirmNevermindBtn">Nevermind</button>
+    </div>`;
+  document.getElementById('confirmOverlay').classList.remove('hidden');
+  document.getElementById('confirmDeleteFlavorBtn').addEventListener('click', async ()=>{ await hideFlavor(flavorName); closeConfirm(); });
+  document.getElementById('confirmNevermindBtn').addEventListener('click', closeConfirm);
 }
 
 async function saveInventoryQty(flavor, qty){
@@ -829,13 +889,17 @@ function renderFlavorPanel(){
 function computeInventoryRows(){
   const pending = new Map(computeFlavorCounts());
   const names = new Set([...ALL_CATALOG_FLAVORS, ...pending.keys(), ...Object.keys(inventory)]);
-  const rows = [...names].map(name => {
-    const pendingQty = pending.get(name) || 0;
-    const stockQty = inventory[name] || 0;
-    const toProduce = Math.max(0, pendingQty - stockQty);
-    const remaining = Math.max(0, stockQty - pendingQty); // stock left over after covering pending
-    return { name, pendingQty, stockQty, toProduce, remaining };
-  });
+  const rows = [...names]
+    // Removed flavors stay hidden UNLESS a new pending order shows up for them —
+    // that's a safety net so a discontinued item can't silently eat real demand.
+    .filter(name => !hiddenFlavors.has(name) || (pending.get(name) || 0) > 0)
+    .map(name => {
+      const pendingQty = pending.get(name) || 0;
+      const stockQty = inventory[name] || 0;
+      const toProduce = Math.max(0, pendingQty - stockQty);
+      const remaining = Math.max(0, stockQty - pendingQty); // stock left over after covering pending
+      return { name, pendingQty, stockQty, toProduce, remaining };
+    });
   // Most urgent (highest "to produce") first, then by pending qty, then alphabetical
   rows.sort((a,b) => b.toProduce - a.toProduce || b.pendingQty - a.pendingQty || a.name.localeCompare(b.name));
   return rows;
@@ -851,13 +915,20 @@ function renderInventoryPanel(){
   const totalToProduce = rows.reduce((s,r) => s + r.toProduce, 0);
   sub.textContent = totalToProduce ? `${totalToProduce} pieces to produce` : 'All pending orders covered by stock';
 
+  const hiddenToggleHtml = hiddenFlavors.size > 0 ? `
+    <div class="inventory-hidden-toggle">
+      <button type="button" class="btn btn-ghost small" id="inventoryShowHiddenBtn">${inventoryHiddenListOpen ? 'Hide list' : `Show ${hiddenFlavors.size} removed flavor${hiddenFlavors.size!==1?'s':''}`}</button>
+      <div id="inventoryHiddenList" class="${inventoryHiddenListOpen ? '' : 'hidden'}"></div>
+    </div>` : '';
+
   if(rows.length === 0){
     area.innerHTML = `
       <div class="inventory-empty">No flavors tracked yet. Add one below to get started.</div>
       <div class="inventory-add-row">
         <input type="text" id="inventoryAddName" placeholder="New flavor name (must match the ordering site exactly)">
         <button type="button" class="btn btn-ghost small" id="inventoryAddBtn">+ Add flavor</button>
-      </div>`;
+      </div>
+      ${hiddenToggleHtml}`;
     const addNameInput = document.getElementById('inventoryAddName');
     const addBtn = document.getElementById('inventoryAddBtn');
     addBtn.addEventListener('click', ()=>{
@@ -866,6 +937,7 @@ function renderInventoryPanel(){
       saveInventoryQty(name, 0);
     });
     addNameInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') addBtn.click(); });
+    wireHiddenFlavorsToggle();
     return;
   }
 
@@ -873,7 +945,7 @@ function renderInventoryPanel(){
     <div class="table-wrap">
       <table class="inventory-table">
         <thead>
-          <tr><th>Flavor</th><th class="right">Pending</th><th class="right">Est. inventory</th><th class="right">Remaining</th><th class="right">To produce</th></tr>
+          <tr><th>Flavor</th><th class="right">Pending</th><th class="right">Est. inventory</th><th class="right">Remaining</th><th class="right">To produce</th><th></th></tr>
         </thead>
         <tbody>
           ${rows.map(r => `
@@ -892,6 +964,9 @@ function renderInventoryPanel(){
               <td class="right">
                 <span class="to-produce-value ${r.toProduce > 0 ? 'needed' : 'covered'}">${r.toProduce}</span>
               </td>
+              <td class="right">
+                <button type="button" class="remove-btn inventory-remove-btn" title="Remove flavor from this panel">✕</button>
+              </td>
             </tr>`).join('')}
         </tbody>
       </table>
@@ -899,15 +974,18 @@ function renderInventoryPanel(){
     <div class="inventory-add-row">
       <input type="text" id="inventoryAddName" placeholder="New flavor name (must match the ordering site exactly)">
       <button type="button" class="btn btn-ghost small" id="inventoryAddBtn">+ Add flavor</button>
-    </div>`;
+    </div>
+    ${hiddenToggleHtml}`;
 
   area.querySelectorAll('tr[data-flavor]').forEach(row => {
     const flavor = row.dataset.flavor;
     const input = row.querySelector('.inventory-stock-input');
     const saveBtn = row.querySelector('.inventory-save-btn');
+    const removeBtn = row.querySelector('.inventory-remove-btn');
     input.addEventListener('focus', ()=>{ inventoryFocusedFlavor = flavor; });
     input.addEventListener('blur', ()=>{ if(inventoryFocusedFlavor === flavor) inventoryFocusedFlavor = null; });
     saveBtn.addEventListener('click', ()=>{ saveInventoryQty(flavor, input.value); });
+    removeBtn.addEventListener('click', ()=>{ openDeleteFlavorConfirm(flavor); });
   });
 
   const addNameInput = document.getElementById('inventoryAddName');
@@ -919,6 +997,42 @@ function renderInventoryPanel(){
   });
   addNameInput.addEventListener('keydown', (e)=>{
     if(e.key === 'Enter') addBtn.click();
+  });
+
+  wireHiddenFlavorsToggle();
+}
+
+// ---------- Removed-flavors manager (below the inventory table) ----------
+function wireHiddenFlavorsToggle(){
+  const btn = document.getElementById('inventoryShowHiddenBtn');
+  if(!btn) return;
+  if(inventoryHiddenListOpen) renderHiddenFlavorsList();
+  btn.addEventListener('click', ()=>{
+    inventoryHiddenListOpen = !inventoryHiddenListOpen;
+    const list = document.getElementById('inventoryHiddenList');
+    if(inventoryHiddenListOpen){
+      renderHiddenFlavorsList();
+      list.classList.remove('hidden');
+      btn.textContent = 'Hide list';
+    } else {
+      list.classList.add('hidden');
+      btn.textContent = `Show ${hiddenFlavors.size} removed flavor${hiddenFlavors.size!==1?'s':''}`;
+    }
+  });
+}
+
+function renderHiddenFlavorsList(){
+  const list = document.getElementById('inventoryHiddenList');
+  if(!list) return;
+  const names = [...hiddenFlavors].sort((a,b)=>a.localeCompare(b));
+  list.innerHTML = names.map(name => `
+    <div class="hidden-flavor-row" data-flavor="${escapeHtml(name)}">
+      <span>${escapeHtml(name)}</span>
+      <button type="button" class="btn btn-ghost small restore-flavor-btn">Restore</button>
+    </div>`).join('');
+  list.querySelectorAll('.hidden-flavor-row').forEach(row => {
+    const name = row.dataset.flavor;
+    row.querySelector('.restore-flavor-btn').addEventListener('click', ()=> restoreFlavor(name));
   });
 }
 

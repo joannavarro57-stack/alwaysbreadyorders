@@ -164,7 +164,7 @@
   .edit-grid input, .edit-grid select{width:100%;}
   .edit-items label{display:block;font-size:.72rem;font-weight:600;color:var(--brown-mid);margin-bottom:6px;}
   .ef-item-row{display:grid;grid-template-columns:2fr 70px 90px 2fr 32px;gap:6px;margin-bottom:6px;align-items:center;}
-  .ef-item-row input{width:100%;}
+  .ef-item-row input,.ef-item-row select{width:100%;min-width:0;}
   .ef-remove-item{background:none;border:none;color:var(--red);cursor:pointer;font-size:.9rem;padding:4px;}
   .edit-actions{display:flex;gap:8px;margin-top:14px;}
 
@@ -394,10 +394,14 @@ const ALL_CATALOG_FLAVORS = [
   'Pandesal con Corned Beef',
   'Pandesal con Shanghai Filling',
   'Pandesal con Chicken Skinless Longaniza',
+  'Pandesal con Creamy Tuna',
+  'Pandesal con Egg & Mayo',
+  'Pandesal con Yema',
   'Cheese Bready',
   'Pandesal (8 PCS)',
   'Pandesal with Cheese',
   'Pastillas Bread',
+  'CocoBon *NEW*',
   'Coco Jam and Roll *NEW*',
 ];
 
@@ -722,11 +726,37 @@ function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+function orderItemOptionsHtml(currentName){
+  const categories = [
+    ['Hot Pandesal', ['Plain Pandesal', 'Pandesal (8 PCS)']],
+    ['Savory Pandesal', [
+      'Pandesal con Corned Beef', 'Pandesal con Shanghai Filling',
+      'Pandesal con Chicken Skinless Longaniza', 'Pandesal con Creamy Tuna',
+      'Pandesal con Egg & Mayo', 'Pandesal with Cheese', 'Pandesal con Cheeese'
+    ]],
+    ['Sweet Bread', [
+      'Cheese Bready', 'Pastillas Bread', 'Pandesal con Yema',
+      'CocoBon *NEW*', 'Coco Jam and Roll *NEW*'
+    ]],
+    ['Box orders', ['Build Your Own Box']],
+  ];
+  const knownNames = new Set(categories.flatMap(([, names]) => names));
+  const customName = currentName && !knownNames.has(currentName)
+    ? `<option value="${escapeHtml(currentName)}" selected>Existing item: ${escapeHtml(currentName)}</option>`
+    : '';
+  return `<option value="" ${currentName ? '' : 'selected'} disabled>Select an item</option>
+    ${customName}
+    ${categories.map(([category, names])=>`
+      <optgroup label="${category}">
+        ${names.map(name=>`<option value="${escapeHtml(name)}" ${name === currentName ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
+      </optgroup>`).join('')}`;
+}
+
 function itemRowHtml(it, i){
   it = it || {name:'', qty:1, price:0, flavors:[]};
   return `
     <div class="ef-item-row" data-idx="${i}">
-      <input class="ef-item-name" value="${escapeHtml(it.name)}" placeholder="Item name">
+      <select class="ef-item-name" aria-label="Item ${i+1}">${orderItemOptionsHtml(it.name)}</select>
       <input class="ef-item-qty" type="number" min="1" value="${it.qty}" placeholder="Qty">
       <input class="ef-item-price" type="number" min="0" value="${it.price}" placeholder="Price">
       <input class="ef-item-flavors" value="${escapeHtml((it.flavors||[]).join(', '))}" placeholder="Flavors, comma separated">

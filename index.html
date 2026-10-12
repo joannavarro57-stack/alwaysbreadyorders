@@ -24,15 +24,17 @@
   .header h1{font-size:1.9rem;color:var(--brown-dark);margin:0;}
   .header p{font-size:.85rem;color:var(--brown-light);margin:2px 0 0;}
   .header-actions{display:flex;gap:8px;align-items:center;}
+  .sheet-tabs{display:flex;gap:4px;overflow-x:auto;padding:0 8px;border-bottom:2px solid var(--border2);margin-bottom:20px;}
+  .sheet-tab{flex:none;padding:10px 18px;border:1px solid transparent;border-bottom:0;border-radius:10px 10px 0 0;background:transparent;color:var(--brown-mid);font:600 .84rem 'Poppins',sans-serif;cursor:pointer;}
+  .sheet-tab:hover{background:#F1E6D2;}
+  .sheet-tab.active{position:relative;margin-bottom:-2px;background:var(--card);border-color:var(--border2);border-bottom:2px solid var(--card);color:var(--brown-dark);}
+  .sheet-panel{background:rgba(255,253,248,.45);border:1px solid var(--border);border-radius:0 14px 14px 14px;padding:18px;}
+  .sheet-panel[hidden]{display:none;}
   .btn{padding:10px 16px;border-radius:10px;font-weight:600;font-size:.85rem;border:none;cursor:pointer;color:#fff;background:var(--accent);box-shadow:0 1px 2px rgba(0,0,0,.06);transition:filter .15s;}
   .btn:hover{filter:brightness(1.06);}
   .btn-dark{background:var(--accent-dark);}
   .btn-ghost{background:transparent;color:var(--brown-mid);border:1px solid var(--border2);}
   .btn.small{padding:6px 10px;font-size:.75rem;}
-  .paste-box{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:24px;}
-  .paste-box p{font-size:.85rem;color:var(--brown-mid);margin:0 0 8px;}
-  textarea{width:100%;height:160px;border-radius:10px;padding:12px;font-size:.85rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#FBF6EC;border:1px solid var(--border2);color:var(--text);resize:vertical;}
-  .paste-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px;}
   .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:24px;}
   @media(min-width:640px){.stats{grid-template-columns:repeat(5,1fr);}}
   .stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;}
@@ -50,6 +52,21 @@
   .flavor-chip{display:flex;align-items:center;gap:8px;background:var(--pending-bg);color:var(--pending-fg);border-radius:10px;padding:8px 12px;font-size:.82rem;font-weight:600;}
   .flavor-chip .count{background:var(--accent-dark);color:#fff;border-radius:999px;min-width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:.72rem;padding:0 6px;}
   .flavor-empty{font-size:.85rem;color:var(--brown-light);}
+
+  .sales-panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:24px;}
+  .sales-chart-wrap{overflow-x:auto;}
+  .sales-chart{display:block;width:100%;min-width:680px;height:auto;overflow:visible;}
+  .sales-gridline{stroke:var(--border);stroke-width:1;}
+  .sales-axis-label,.sales-week-label{fill:var(--brown-light);font-family:'Poppins',sans-serif;font-size:11px;}
+  .sales-week-label{text-anchor:middle;}
+  .sales-legend{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:12px;}
+  .sales-legend-item{display:flex;align-items:center;gap:6px;font-size:.75rem;color:var(--brown-mid);}
+  .sales-legend-swatch{width:10px;height:10px;border-radius:50%;flex:none;}
+  .sales-empty{text-align:center;padding:32px 12px;color:var(--brown-light);font-size:.85rem;}
+  .inventory-chart-wrap{overflow-x:auto;}
+  .inventory-level-chart{display:block;width:100%;min-width:620px;height:auto;}
+  .inventory-bar-label,.inventory-bar-value,.inventory-bar-axis{fill:var(--brown-mid);font-family:'Poppins',sans-serif;font-size:11px;}
+  .inventory-bar-value{fill:var(--brown-dark);font-weight:600;}
 
   .inventory-panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:24px;}
   .inventory-hint{font-size:.78rem;color:var(--brown-light);margin:0 0 14px;line-height:1.5;}
@@ -241,65 +258,97 @@
     <div class="header">
       <div>
         <h1 class="display">Always Bready</h1>
-        <p>WhatsApp order tracker — kasi puno na yung chat, di ba?</p>
+        <p>Live order, sales &amp; inventory dashboard</p>
       </div>
       <div class="header-actions">
         <span class="sync-label"><span class="sync-dot" id="syncDot"></span><span id="syncText">Live</span></span>
-        <button class="btn" id="toggleBtn">+ Add orders</button>
         <button class="btn btn-ghost" id="logoutBtn">Sign out</button>
       </div>
     </div>
 
-    <div class="paste-box" id="pasteBox">
-      <p>Paste one or more order messages copied straight from WhatsApp. Multiple orders in one paste? No problem — it splits them automatically.</p>
-      <textarea id="pasteInput" placeholder="New order #ABrdy-1234 — Always Bready
+    <nav class="sheet-tabs" id="sheetTabs" role="tablist" aria-label="Main sections">
+      <button class="sheet-tab active" id="tab-overview" type="button" role="tab" aria-selected="true" aria-controls="panel-overview" data-section="overview">Overview</button>
+      <button class="sheet-tab" id="tab-orders" type="button" role="tab" aria-selected="false" aria-controls="panel-orders" data-section="orders">Orders</button>
+      <button class="sheet-tab" id="tab-inventory" type="button" role="tab" aria-selected="false" aria-controls="panel-inventory" data-section="inventory">Inventory</button>
+    </nav>
 
-- Ube Pandesal x2 (AED 20)
-..."></textarea>
-      <div class="paste-actions">
-        <button class="btn btn-dark" id="parseBtn">Parse orders</button>
+    <section class="sheet-panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
+      <div class="stats">
+        <div class="stat"><div class="label">Total orders</div><div class="value" id="statTotal">0</div></div>
+        <div class="stat pending"><div class="label">Pending</div><div class="value" id="statPending">0</div></div>
+        <div class="stat delivered"><div class="label">Delivered</div><div class="value" id="statDelivered">0</div></div>
+        <div class="stat cancelled"><div class="label">Cancelled</div><div class="value" id="statCancelled">0</div></div>
+        <div class="stat"><div class="label">Total revenue</div><div class="value" id="statRevenue">AED 0</div></div>
       </div>
-    </div>
 
-    <div class="stats">
-      <div class="stat"><div class="label">Total orders</div><div class="value" id="statTotal">0</div></div>
-      <div class="stat pending"><div class="label">Pending</div><div class="value" id="statPending">0</div></div>
-      <div class="stat delivered"><div class="label">Delivered</div><div class="value" id="statDelivered">0</div></div>
-      <div class="stat cancelled"><div class="label">Cancelled</div><div class="value" id="statCancelled">0</div></div>
-      <div class="stat"><div class="label">Total revenue</div><div class="value" id="statRevenue">AED 0</div></div>
-    </div>
-
-    <div class="flavor-panel">
-      <div class="flavor-panel-head">
-        <h2 id="flavorPanelTitle">Pending orders by flavor</h2>
-        <span class="sub" id="flavorPanelSub"></span>
+      <div class="sales-panel">
+        <div class="flavor-panel-head">
+          <h2>Inventory summary by category</h2>
+          <span class="sub">Current stock compared with pending demand</span>
+        </div>
+        <div id="categoryInventoryChartArea"></div>
       </div>
-      <div class="flavor-grid" id="flavorGrid"></div>
-    </div>
 
-    <div class="toolbar">
-      <div class="tabs" id="tabs">
-        <button data-filter="all" class="active">All</button>
-        <button data-filter="pending">Pending</button>
-        <button data-filter="delivered">Delivered</button>
-        <button data-filter="cancelled">Cancelled</button>
+      <div class="sales-panel">
+        <div class="flavor-panel-head">
+          <h2>Weekly sales summary by category</h2>
+          <span class="sub">Units ordered by week · cancelled orders excluded</span>
+        </div>
+        <div id="categorySalesChartArea"></div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <input type="text" id="searchInput" placeholder="Search name, phone, order #">
-        <button class="btn btn-ghost small" id="exportBtn">⬇ Download CSV</button>
-      </div>
-    </div>
 
-    <div id="tableArea"></div>
-
-    <div class="inventory-panel">
-      <div class="flavor-panel-head">
-        <h2>Inventory &amp; production plan</h2>
-        <span class="sub" id="inventorySub"></span>
+      <div class="sales-panel">
+        <div class="flavor-panel-head">
+          <h2>Inventory level by flavor</h2>
+          <span class="sub">Current stock · flavors needing the most production appear first</span>
+        </div>
+        <div id="inventoryChartArea"></div>
       </div>
-      <p class="inventory-hint">Est. inventory is entered manually here and syncs live to the ordering website, where customers see it as "Est. N left today". Remaining = Est. inventory − Pending (surplus after covering pending orders). To produce = Pending − Est. inventory (never below 0).</p>
-      <div id="inventoryTableArea"></div>
-    </div>
+
+      <div class="flavor-panel">
+        <div class="flavor-panel-head">
+          <h2 id="flavorPanelTitle">Pending orders by flavor</h2>
+          <span class="sub" id="flavorPanelSub"></span>
+        </div>
+        <div class="flavor-grid" id="flavorGrid"></div>
+      </div>
+
+      <div class="sales-panel">
+        <div class="flavor-panel-head">
+          <h2>Weekly sales by flavor</h2>
+          <span class="sub">Units ordered per week · cancelled orders excluded</span>
+        </div>
+        <div id="salesChartArea"></div>
+      </div>
+    </section>
+
+    <section class="sheet-panel" id="panel-orders" role="tabpanel" aria-labelledby="tab-orders" hidden>
+      <div class="toolbar">
+        <div class="tabs" id="tabs">
+          <button data-filter="all" class="active">All</button>
+          <button data-filter="pending">Pending</button>
+          <button data-filter="delivered">Delivered</button>
+          <button data-filter="cancelled">Cancelled</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="searchInput" placeholder="Search name, phone, order #">
+          <button class="btn btn-ghost small" id="exportBtn">⬇ Download CSV</button>
+        </div>
+      </div>
+
+      <div id="tableArea"></div>
+    </section>
+
+    <section class="sheet-panel" id="panel-inventory" role="tabpanel" aria-labelledby="tab-inventory" hidden>
+      <div class="inventory-panel">
+        <div class="flavor-panel-head">
+          <h2>Inventory &amp; production plan</h2>
+          <span class="sub" id="inventorySub"></span>
+        </div>
+        <p class="inventory-hint">Est. inventory is entered manually here and syncs live to the ordering website, where customers see it as "Est. N left today". Remaining = Est. inventory − Pending (surplus after covering pending orders). To produce = Pending − Est. inventory (never below 0).</p>
+        <div id="inventoryTableArea"></div>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -352,6 +401,30 @@ const ALL_CATALOG_FLAVORS = [
   'Coco Jam and Roll *NEW*',
 ];
 
+const FLAVOR_CATEGORY_BY_NAME = {
+  'Plain Pandesal': 'Hot Pandesal',
+  'Pandesal (8 PCS)': 'Hot Pandesal',
+  'Pandesal con Corned Beef': 'Savory Pandesal',
+  'Pandesal con Shanghai Filling': 'Savory Pandesal',
+  'Pandesal con Chicken Skinless Longaniza': 'Savory Pandesal',
+  'Pandesal con Creamy Tuna': 'Savory Pandesal',
+  'Pandesal con Egg & Mayo': 'Savory Pandesal',
+  'Pandesal with Cheese': 'Savory Pandesal',
+  'Pandesal con Cheeese': 'Savory Pandesal',
+  'Cheese Bready': 'Sweet Bread',
+  'Pastillas Bread': 'Sweet Bread',
+  'Pandesal con Yema': 'Sweet Bread',
+  'CocoBon *NEW*': 'Sweet Bread',
+  'Coco Jam and Roll *NEW*': 'Sweet Bread',
+};
+const CATEGORY_ORDER = ['Hot Pandesal', 'Savory Pandesal', 'Sweet Bread', 'Other'];
+const CATEGORY_COLORS = {
+  'Hot Pandesal': '#C87F3D',
+  'Savory Pandesal': '#3E6B94',
+  'Sweet Bread': '#8A6CAD',
+  'Other': '#9C8163',
+};
+
 let orders = [];
 let filter = 'all';
 let query = '';
@@ -393,44 +466,6 @@ function fromRow(r){
     fulfilledFlavors: r.fulfilled_flavors || {},
     deliveryCharge: r.delivery_charge || 0
   };
-}
-
-// ---------- Parsing (same format the site's checkout button generates) ----------
-function splitMessages(raw){
-  return raw.split(/(?=New order #)/g).map(s=>s.trim()).filter(s=>s.startsWith('New order #'));
-}
-function field(msg, label){
-  const m = msg.match(new RegExp(label + ':\\s*(.+)'));
-  return m ? m[1].trim() : '';
-}
-function parseOne(msg){
-  const orderNoMatch = msg.match(/New order #(\S+)/);
-  const totalMatch = msg.match(/Total:\s*AED\s*([\d.]+)/);
-  const itemsBlockMatch = msg.match(/Always Bready\s*\n\n([\s\S]*?)\n\nTotal:/);
-  const items = [];
-  if(itemsBlockMatch){
-    let current = null;
-    itemsBlockMatch[1].split('\n').forEach(line=>{
-      const itemMatch = line.match(/^-\s(.+?)\sx(\d+)\s\(AED\s([\d.]+)\)/);
-      if(itemMatch){
-        current = {name:itemMatch[1], qty:+itemMatch[2], price:+itemMatch[3], flavors:[]};
-        items.push(current);
-      } else if(/^\s{3,}-\s/.test(line) && current){
-        current.flavors.push(line.trim().replace(/^-\s*/,''));
-      }
-    });
-  }
-  return {
-    id: orderNoMatch ? orderNoMatch[1] : 'ORD-' + Date.now() + Math.floor(Math.random()*1000),
-    total: totalMatch ? parseFloat(totalMatch[1]) : 0,
-    name: field(msg,'Name'), phone: field(msg,'Phone'), fulfilment: field(msg,'Fulfilment'),
-    area: field(msg,'Area'), address: field(msg,'Address'),
-    prefDate: field(msg,'Preferred date'), prefTime: field(msg,'Preferred time'), notes: field(msg,'Notes'),
-    items, status: 'pending', receivedAt: new Date().toISOString(), deliveredAt: null
-  };
-}
-function parseAll(raw){
-  return splitMessages(raw).map(parseOne).filter(o => o.name || o.total);
 }
 
 // ---------- Duration formatting ----------
@@ -562,30 +597,6 @@ async function saveInventoryQty(flavor, qty){
   inventory[flavor] = quantity;
   showToast(`${flavor}: est. inventory set to ${quantity}.`);
   renderInventoryPanel();
-}
-
-async function handleParse(){
-  const raw = document.getElementById('pasteInput').value;
-  const parsed = parseAll(raw);
-  if(parsed.length === 0){
-    showToast("No orders found in that text — check it's copied from WhatsApp.");
-    return;
-  }
-  const existingMap = new Map(orders.map(o => [o.id, o]));
-  const merged = parsed.map(p => {
-    const existing = existingMap.get(p.id);
-    return existing ? {...p, status: existing.status, receivedAt: existing.receivedAt, deliveredAt: existing.deliveredAt} : p;
-  });
-  const added = merged.filter(p => !existingMap.has(p.id)).length;
-  const updated = merged.length - added;
-
-  const { error } = await sb.from('orders').upsert(merged.map(toRow), { onConflict: 'id' });
-  if(error){ showToast('Save failed: ' + error.message); return; }
-
-  showToast(`Added ${added} new order${added!==1?'s':''}${updated ? `, ${updated} already tracked` : ''}.`);
-  document.getElementById('pasteInput').value = '';
-  document.getElementById('pasteBox').classList.add('hidden');
-  await fetchOrders();
 }
 
 async function toggleStatus(id){
@@ -783,6 +794,10 @@ function parseNameQty(raw){
   return { name, qty: qty || 1 };
 }
 
+function getFlavorCategory(flavor){
+  return FLAVOR_CATEGORY_BY_NAME[flavor] || 'Other';
+}
+
 // For each item on an order: if it has a flavor breakdown (e.g. a "Build Your
 // Own Box"), each flavor line describes the composition of ONE box, so its
 // qty is multiplied by how many boxes were ordered (it.qty). If an item has
@@ -809,6 +824,219 @@ function getOrderFlavorTotals(o){
     }
   });
   return [...totals.entries()];
+}
+
+function startOfWeek(date){
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  return start;
+}
+
+function weekKey(date){
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function renderSalesChart(byCategory = false){
+  const area = document.getElementById(byCategory ? 'categorySalesChartArea' : 'salesChartArea');
+  const currentWeek = startOfWeek(new Date());
+  const weeks = Array.from({length:12}, (_, index)=>{
+    const start = new Date(currentWeek);
+    start.setDate(start.getDate() - (11 - index) * 7);
+    return { start, key: weekKey(start), totals: new Map() };
+  });
+  const weeksByKey = new Map(weeks.map(week => [week.key, week]));
+
+  orders.filter(order => order.status !== 'cancelled').forEach(order => {
+    const receivedAt = new Date(order.receivedAt);
+    if(Number.isNaN(receivedAt.getTime())) return;
+    const week = weeksByKey.get(weekKey(startOfWeek(receivedAt)));
+    if(!week) return;
+    getOrderFlavorTotals(order).forEach(([name, quantity]) => {
+      const seriesName = byCategory ? getFlavorCategory(name) : name;
+      week.totals.set(seriesName, (week.totals.get(seriesName) || 0) + quantity);
+    });
+  });
+
+  const seriesNames = [...new Set(weeks.flatMap(week => [...week.totals.keys()]))];
+  if(byCategory){
+    seriesNames.sort((a, b) => CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b));
+  } else {
+    seriesNames.sort((a, b) => a.localeCompare(b));
+  }
+  if(seriesNames.length === 0){
+    area.innerHTML = '<div class="sales-empty">No sales in the last 12 weeks.</div>';
+    return;
+  }
+
+  const colors = ['#C87F3D','#3E6B94','#5B8A55','#B5654A','#8A6CAD','#D1A72C','#398B84','#C46E9A','#6D7853','#8A5A1E'];
+  const colorFor = (name, index) => byCategory ? (CATEGORY_COLORS[name] || CATEGORY_COLORS.Other) : colors[index % colors.length];
+  const width = 900;
+  const height = 330;
+  const left = 48;
+  const right = 16;
+  const top = 18;
+  const bottom = 48;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const largestValue = Math.max(...weeks.flatMap(week => [...week.totals.values()]), 0);
+  const roughStep = Math.max(1, largestValue / 4);
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
+  const tickStep = Math.ceil(roughStep / magnitude) * magnitude;
+  const maxValue = Math.max(tickStep, Math.ceil(largestValue / tickStep) * tickStep);
+  const xFor = index => left + plotWidth * index / (weeks.length - 1);
+  const yFor = value => top + plotHeight * (1 - value / maxValue);
+
+  const grid = Array.from({length:Math.floor(maxValue / tickStep) + 1}, (_, index)=>{
+    const value = index * tickStep;
+    const y = yFor(value);
+    return `<line class="sales-gridline" x1="${left}" y1="${y}" x2="${width-right}" y2="${y}"></line>
+      <text class="sales-axis-label" x="${left-10}" y="${y+4}" text-anchor="end">${value}</text>`;
+  }).join('');
+  const labels = weeks.map((week, index)=>{
+    const label = week.start.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+    return `<text class="sales-week-label" x="${xFor(index)}" y="${height-18}">${label}</text>`;
+  }).join('');
+  const series = seriesNames.map((name, seriesIndex)=>{
+    const color = colorFor(name, seriesIndex);
+    const points = weeks.map((week, index)=>({
+      x: xFor(index),
+      y: yFor(week.totals.get(name) || 0),
+      value: week.totals.get(name) || 0,
+      week: week.start
+    }));
+    const path = points.map((point, index)=>`${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+    const circles = points.map(point=>`<circle cx="${point.x}" cy="${point.y}" r="3.5" fill="${color}">
+      <title>${escapeHtml(name)} · ${point.value} units · week of ${point.week.toLocaleDateString()}</title>
+    </circle>`).join('');
+    return `<path d="${path}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>${circles}`;
+  }).join('');
+  const legend = seriesNames.map((name, index)=>`
+    <div class="sales-legend-item"><span class="sales-legend-swatch" style="background:${colorFor(name, index)}"></span>${escapeHtml(name)}</div>
+  `).join('');
+
+  area.innerHTML = `
+    <div class="sales-chart-wrap">
+      <svg class="sales-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Weekly units sold ${byCategory ? 'by category' : 'by flavor'} over the last 12 weeks">
+        ${grid}${labels}${series}
+      </svg>
+    </div>
+    <div class="sales-legend">${legend}</div>`;
+}
+
+function renderCategoryInventoryChart(rows){
+  const area = document.getElementById('categoryInventoryChartArea');
+  const totals = new Map();
+  rows.forEach(row=>{
+    const category = getFlavorCategory(row.name);
+    const current = totals.get(category) || { stockQty: 0, pendingQty: 0 };
+    current.stockQty += row.stockQty;
+    current.pendingQty += row.pendingQty;
+    totals.set(category, current);
+  });
+  const categories = [...totals.keys()].sort((a, b) => CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b));
+  if(categories.length === 0){
+    area.innerHTML = '<div class="sales-empty">No inventory data to summarize.</div>';
+    return;
+  }
+
+  const width = 900;
+  const left = 220;
+  const right = 58;
+  const top = 20;
+  const rowHeight = 56;
+  const height = top + categories.length * rowHeight + 24;
+  const chartWidth = width - left - right;
+  const largestValue = Math.max(...categories.flatMap(category=>{
+    const total = totals.get(category);
+    return [total.stockQty, total.pendingQty];
+  }), 0);
+  const roughStep = Math.max(1, largestValue / 4);
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
+  const tickStep = Math.ceil(roughStep / magnitude) * magnitude;
+  const maxValue = Math.max(tickStep, Math.ceil(largestValue / tickStep) * tickStep);
+  const xFor = value => left + chartWidth * value / maxValue;
+  const grid = Array.from({length:Math.floor(maxValue / tickStep) + 1}, (_, index)=>{
+    const value = index * tickStep;
+    const x = xFor(value);
+    return `<line class="sales-gridline" x1="${x}" y1="${top-8}" x2="${x}" y2="${height-16}"></line>
+      <text class="inventory-bar-axis" x="${x}" y="${height-2}" text-anchor="middle">${value}</text>`;
+  }).join('');
+  const bars = categories.map((category, index)=>{
+    const total = totals.get(category);
+    const y = top + index * rowHeight;
+    const stockY = y;
+    const pendingY = y + 23;
+    const stockEnd = xFor(total.stockQty);
+    const pendingEnd = xFor(total.pendingQty);
+    return `<text class="inventory-bar-label" x="${left-12}" y="${y+12}" text-anchor="end">${escapeHtml(category)}</text>
+      <rect x="${left}" y="${stockY}" width="${chartWidth * total.stockQty / maxValue}" height="15" rx="4" fill="#C87F3D">
+        <title>${escapeHtml(category)}: ${total.stockQty} currently in stock</title>
+      </rect>
+      <text class="inventory-bar-value" x="${Math.min(stockEnd+7, width-28)}" y="${stockY+12}">${total.stockQty}</text>
+      <rect x="${left}" y="${pendingY}" width="${chartWidth * total.pendingQty / maxValue}" height="15" rx="4" fill="#3E6B94">
+        <title>${escapeHtml(category)}: ${total.pendingQty} units in pending orders</title>
+      </rect>
+      <text class="inventory-bar-value" x="${Math.min(pendingEnd+7, width-28)}" y="${pendingY+12}">${total.pendingQty}</text>`;
+  }).join('');
+
+  area.innerHTML = `
+    <div class="inventory-chart-wrap">
+      <svg class="inventory-level-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Current stock and pending demand by flavor category">
+        ${grid}${bars}
+      </svg>
+    </div>
+    <div class="sales-legend">
+      <div class="sales-legend-item"><span class="sales-legend-swatch" style="background:#C87F3D"></span>Current stock</div>
+      <div class="sales-legend-item"><span class="sales-legend-swatch" style="background:#3E6B94"></span>Pending orders</div>
+    </div>`;
+}
+
+function renderInventoryChart(rows){
+  const area = document.getElementById('inventoryChartArea');
+  if(rows.length === 0){
+    area.innerHTML = '<div class="sales-empty">No flavors tracked yet.</div>';
+    return;
+  }
+
+  const sortedRows = rows;
+  const width = 900;
+  const labelWidth = 250;
+  const right = 52;
+  const top = 20;
+  const rowHeight = 34;
+  const height = top + sortedRows.length * rowHeight + 18;
+  const chartWidth = width - labelWidth - right;
+  const largestValue = Math.max(...sortedRows.map(row => row.stockQty), 0);
+  const roughStep = Math.max(1, largestValue / 4);
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
+  const tickStep = Math.ceil(roughStep / magnitude) * magnitude;
+  const maxValue = Math.max(tickStep, Math.ceil(largestValue / tickStep) * tickStep);
+  const xFor = value => labelWidth + chartWidth * value / maxValue;
+
+  const grid = Array.from({length:Math.floor(maxValue / tickStep) + 1}, (_, index)=>{
+    const value = index * tickStep;
+    const x = xFor(value);
+    return `<line class="sales-gridline" x1="${x}" y1="${top-8}" x2="${x}" y2="${height-10}"></line>
+      <text class="inventory-bar-axis" x="${x}" y="${height-2}" text-anchor="middle">${value}</text>`;
+  }).join('');
+  const bars = sortedRows.map((row, index)=>{
+    const y = top + index * rowHeight;
+    const barWidth = chartWidth * row.stockQty / maxValue;
+    const valueX = Math.min(xFor(row.stockQty) + 8, width - 28);
+    return `<text class="inventory-bar-label" x="${labelWidth-12}" y="${y+14}" text-anchor="end">${escapeHtml(row.name)}</text>
+      <rect x="${labelWidth}" y="${y}" width="${barWidth}" height="18" rx="5" fill="#C87F3D">
+        <title>${escapeHtml(row.name)}: ${row.stockQty} in stock</title>
+      </rect>
+      <text class="inventory-bar-value" x="${valueX}" y="${y+14}">${row.stockQty}</text>`;
+  }).join('');
+
+  area.innerHTML = `
+    <div class="inventory-chart-wrap">
+      <svg class="inventory-level-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Estimated inventory units by flavor">
+        ${grid}${bars}
+      </svg>
+    </div>`;
 }
 
 // Combined total pending REMAINING per flavor, across every pending order —
@@ -911,6 +1139,8 @@ function renderInventoryPanel(){
   const sub = document.getElementById('inventorySub');
   const area = document.getElementById('inventoryTableArea');
   const rows = computeInventoryRows();
+  renderCategoryInventoryChart(rows);
+  renderInventoryChart(rows);
 
   const totalToProduce = rows.reduce((s,r) => s + r.toProduce, 0);
   sub.textContent = totalToProduce ? `${totalToProduce} pieces to produce` : 'All pending orders covered by stock';
@@ -1048,6 +1278,8 @@ function render(){
   document.getElementById('statCancelled').textContent = cancelled;
   document.getElementById('statRevenue').textContent = 'AED ' + revenue.toFixed(0);
 
+  renderSalesChart();
+  renderSalesChart(true);
   renderFlavorPanel();
   renderInventoryPanel();
 
@@ -1062,7 +1294,7 @@ function render(){
 
   const area = document.getElementById('tableArea');
   if(list.length === 0){
-    area.innerHTML = `<div class="empty">${orders.length===0 ? 'No orders yet. Paste your first WhatsApp order above to get started.' : 'No orders match this filter.'}</div>`;
+    area.innerHTML = `<div class="empty">${orders.length===0 ? 'No orders yet.' : 'No orders match this filter.'}</div>`;
     return;
   }
 
@@ -1477,10 +1709,16 @@ document.getElementById('logoutBtn').addEventListener('click', async ()=>{
 });
 
 // ---------- Event wiring ----------
-document.getElementById('toggleBtn').addEventListener('click', ()=>{
-  document.getElementById('pasteBox').classList.toggle('hidden');
+document.getElementById('sheetTabs').addEventListener('click', (e)=>{
+  const tab = e.target.closest('[data-section]');
+  if(!tab) return;
+  document.querySelectorAll('#sheetTabs [role="tab"]').forEach(button=>{
+    const selected = button === tab;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-selected', String(selected));
+    document.getElementById(button.getAttribute('aria-controls')).hidden = !selected;
+  });
 });
-document.getElementById('parseBtn').addEventListener('click', handleParse);
 document.getElementById('tabs').addEventListener('click', (e)=>{
   const btn = e.target.closest('button');
   if(!btn) return;
